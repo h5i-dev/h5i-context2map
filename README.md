@@ -14,11 +14,19 @@ pixels.
 text tokens) as **one 2,550-token image**: 74% cheaper, every section a
 labeled box, thicker borders = more relevant to your query.*
 
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/h5i-dev/h5i-ctx2img/main/install.sh | sh
+```
+
+Installs the latest release binary (Linux x86_64, macOS x86_64/arm64;
+Windows zip on the [Releases page](https://github.com/h5i-dev/h5i-ctx2img/releases)).
+Or from source: `cargo install --path crates/ctx2img-cli`
+
 ## Usage
 
 ```bash
-cargo install --path crates/ctx2img-cli
-
 ctx2img paint <file|dir|->            # THE command: any text → dense image(s)
 echo "$PROMPT" | ctx2img paint        # paint any text via stdin — a prompt, a log, a diff
 ```
