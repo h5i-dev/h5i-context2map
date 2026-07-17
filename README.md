@@ -20,6 +20,7 @@ labeled box, thicker borders = more relevant to your query.*
 cargo install --path crates/ctx2img-cli
 
 ctx2img paint <file|dir|->            # THE command: any text → dense image(s)
+echo "$PROMPT" | ctx2img paint        # paint any text via stdin — a prompt, a log, a diff
 ```
 
 What you get depends on the input shape:
