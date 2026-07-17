@@ -7,7 +7,9 @@ use crate::field::marching_squares;
 use crate::CellShape;
 
 /// RDP tolerance in *grid pixels* (converted to normalized units per call).
-const RDP_EPS_PX: f32 = 1.4;
+/// Kept tight: adjacent cells simplify independently, so every unit of
+/// tolerance widens the visible channel between them.
+const RDP_EPS_PX: f32 = 0.8;
 
 /// (polygon, centroid, anchor, anchor radius) in normalized coordinates.
 type CellParts = (Vec<(f32, f32)>, (f32, f32), (f32, f32), f32);

@@ -7,9 +7,8 @@ use rayon::prelude::*;
 /// Continent mask: an inset rounded rectangle whose boundary is warped by
 /// value noise — enough organic character to read as a landmass, without
 /// risking disconnected blobs (the noise only perturbs the edge).
-pub fn land_mask(gw: usize, gh: usize, margin: f32, seed: u64) -> Vec<bool> {
+pub fn land_mask(gw: usize, gh: usize, margin: f32, coast_amp: f32, seed: u64) -> Vec<bool> {
     let mut mask = vec![false; gw * gh];
-    let coast_amp = 0.55; // fraction of margin the coast may wander
     for y in 0..gh {
         for x in 0..gw {
             let nx = (x as f32 + 0.5) / gw as f32;

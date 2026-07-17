@@ -94,6 +94,9 @@ pub struct LayoutOptions {
     pub seed: u64,
     /// Sea margin as a fraction of the canvas.
     pub margin: f32,
+    /// Coastline waviness: fraction of the margin the coast may wander.
+    /// High = scenic; low = dense (more canvas is land).
+    pub coast_amp: f32,
     /// How many external-dep islands to place.
     pub n_islands: usize,
 }
@@ -104,7 +107,8 @@ impl Default for LayoutOptions {
             grid: 448,
             aspect: 1.0,
             seed: 0xC2A9,
-            margin: 0.085,
+            margin: 0.055,
+            coast_amp: 0.45,
             n_islands: 12,
         }
     }
@@ -117,7 +121,7 @@ pub fn layout(territories: &[Territory], opts: &LayoutOptions, saved: &mut Saved
     let gh = ((opts.grid as f32 / opts.aspect).round() as usize).max(64);
     let n = territories.len();
 
-    let land = grid::land_mask(gw, gh, opts.margin, opts.seed);
+    let land = grid::land_mask(gw, gh, opts.margin, opts.coast_amp, opts.seed);
     let land_count = land.iter().filter(|&&l| l).count().max(1);
 
     // --- sites: persisted or hash-seeded, snapped into land ---

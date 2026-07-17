@@ -266,8 +266,10 @@ pub fn build_doc(sections: &[DocSection], cfg: &SceneConfig) -> Scene {
         aspect: cfg.width as f32 / cfg.height as f32,
         seed: cfg.seed,
         n_islands: 0,
-        // text-bearing maps: the sea is a sliver — pixels carry text
-        margin: 0.030,
+        // text-bearing maps: the sea is a sliver and the coast is calm —
+        // pixels carry text
+        margin: 0.018,
+        coast_amp: 0.18,
         ..Default::default()
     };
     let mut saved = SavedSites::default();
@@ -352,8 +354,9 @@ pub fn build_l2(
         aspect: cfg.width as f32 / cfg.height as f32,
         seed: cfg.seed ^ 0x2200,
         n_islands: 0,
-        // zoom tiles exist to carry content; minimal sea margin
-        margin: if content.is_some() { 0.030 } else { 0.055 },
+        // zoom tiles exist to carry content; minimal, calm sea
+        margin: if content.is_some() { 0.018 } else { 0.045 },
+        coast_amp: if content.is_some() { 0.18 } else { 0.40 },
         ..Default::default()
     };
     let l = layout(&territories, &lopts, saved);

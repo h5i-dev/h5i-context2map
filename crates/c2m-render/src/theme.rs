@@ -126,8 +126,8 @@ pub fn flow_text_ops(
     use crate::display::{Op, TextAlign};
     let font = FontKind::Mono;
     let advance = text::measure("M", size_px, font).max(1.0);
-    let line_h = size_px * 1.28;
-    let pad = size_px * 0.45;
+    let line_h = size_px * 1.22;
+    let pad = size_px * 0.35;
     let (_, _, _, by1) = poly_bbox_px(poly, canvas_w, canvas_h);
 
     let mut ops = Vec::new();
@@ -146,7 +146,7 @@ pub fn flow_text_ops(
         };
         let (x0, x1) = (tx0.max(bx0) + pad, tx1.min(bx1) - pad);
         let capacity = ((x1 - x0) / advance) as usize;
-        if capacity < 8 {
+        if capacity < 6 {
             continue;
         }
 
