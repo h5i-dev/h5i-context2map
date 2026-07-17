@@ -201,24 +201,31 @@ impl MachinePalette {
             if c.poly.len() < 3 {
                 continue;
             }
-            // inscribe cell: header pinned to the cell top, the text below it
+            // inscribe cell: header pinned to the cell top-left, the text
+            // below it; ellipsized to the box so it never crosses neighbors
             if let Some(lines) = &c.text {
                 let hsize = (scene.text_px * 1.2).max(MIN_LABEL_PX);
                 let (bx0, by0, bx1, _) = poly_bbox_px(&c.poly, w, h);
-                let cxm = (bx0 + bx1) / 2.0;
-                let hy = by0 + hsize * 1.7;
+                let hy = by0 + hsize * 1.5;
                 let mut header = format!("{} {} ▲{}", c.handle, c.name, c.band);
                 let tags = hazard::tags(c.hazards);
                 if !tags.is_empty() {
                     header.push_str(&format!(" ⚠{}", tags.join(",")));
                 }
+                let max_w = (bx1 - bx0) - hsize * 1.2;
+                while header.chars().count() > 4
+                    && label_box(&header, hsize, FontKind::SansBold).0 > max_w
+                {
+                    header = header.chars().take(header.chars().count() - 2).collect();
+                    header.push('…');
+                }
                 dl.push(Op::Text {
-                    pos: (cxm / w, hy / h),
+                    pos: ((bx0 + hsize * 0.6) / w, hy / h),
                     text: header,
                     size_px: hsize,
                     color: self.ink,
                     font: FontKind::SansBold,
-                    align: TextAlign::Center,
+                    align: TextAlign::Left,
                     halo: Some(self.halo),
                 });
                 let spill_note = if c.handle.starts_with('F') {

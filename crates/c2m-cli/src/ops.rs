@@ -254,6 +254,25 @@ pub fn zoom(
 
             let mut answer = serde_json::json!({ "roster": roster });
             if !text_only {
+                let budget = if inscribe && boxes {
+                    let bytes: usize = built.analysis.tree.regions[ri]
+                        .files
+                        .iter()
+                        .filter_map(|f| {
+                            std::fs::metadata(ctx.ws.root.join(&built.analysis.files[f.idx()].path))
+                                .ok()
+                                .map(|m| m.len() as usize)
+                        })
+                        .sum();
+                    budget.min(fit_budget(
+                        bytes,
+                        built.analysis.tree.regions[ri].files.len().min(48),
+                        text_px.max(8.0),
+                        budget,
+                    ))
+                } else {
+                    budget
+                };
                 let (w, h) = provider.solve(budget, 1.0);
                 let mut saved = SavedSites::load(&ctx.ws.dir.join(format!("layout-{handle}.json")));
                 let cfg = SceneConfig {
@@ -548,6 +567,17 @@ pub fn render(
     Ok(())
 }
 
+/// Token budget that a box layout actually NEEDS for `chars` of content at
+/// `font_px` — canvases are sized to content, not to the allowance, so
+/// boxes carry no built-in slack (and unused budget becomes savings).
+fn fit_budget(chars: usize, n_boxes: usize, font_px: f32, budget: u32) -> u32 {
+    let advance = c2m_render::text::measure("M", font_px, c2m_render::display::FontKind::Mono);
+    let line_h = font_px * 1.22;
+    let header_px2 = (font_px * 1.2 * 2.4) * 420.0; // header strip per box
+    let px2 = chars as f32 * advance * line_h * 1.18 + n_boxes as f32 * header_px2;
+    ((px2 / 750.0) as u32).clamp(500, budget)
+}
+
 // ---------------------------------------------------------------- paint
 
 /// The universal front door: render ANY text-shaped input into images that
@@ -725,6 +755,17 @@ fn paint_doc(
         return Ok(());
     }
     let effective = if force { requested } else { effective.max(500) };
+    let total_chars: usize = sections.iter().map(|s| s.text.len()).sum();
+    let effective = if layout != "organic" {
+        effective.min(fit_budget(
+            total_chars,
+            sections.len(),
+            font_px.max(8.0),
+            effective,
+        ))
+    } else {
+        effective
+    };
     let bands = c2m_core::sections::band_sections(sections, query);
     let doc_sections: Vec<scene::DocSection> = sections
         .iter()
@@ -853,7 +894,26 @@ fn paint_repo(
             skipped.push(format!("{handle} {}", region.display_name()));
             continue;
         }
-        let (tw, th) = provider.solve(per_tile, 1.0);
+        let tile_budget = if boxes {
+            let bytes: usize = region
+                .files
+                .iter()
+                .filter_map(|f| {
+                    std::fs::metadata(ws.root.join(&built.analysis.files[f.idx()].path))
+                        .ok()
+                        .map(|m| m.len() as usize)
+                })
+                .sum();
+            per_tile.min(fit_budget(
+                bytes,
+                region.files.len().min(48),
+                font_px.max(8.0),
+                per_tile,
+            ))
+        } else {
+            per_tile
+        };
+        let (tw, th) = provider.solve(tile_budget, 1.0);
         let mut tile_sites = SavedSites::load(&ws.dir.join(format!("layout-{handle}.json")));
         let tcfg = SceneConfig {
             width: tw,
