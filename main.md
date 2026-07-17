@@ -60,11 +60,13 @@ Design a Rust tool (context2map) that converts repo/context into query-condition
 - [x] Shrink-to-fit for section-map pages: canvas walks down to real content size
 - [x] edited crates/ctx2img-cli/src/ops.rs; edited crates/ctx2img-cli/src/ops.rs; edited crates/ctx2img-render/src/lib.rs
 - [x] edited crates/ctx2img-cli/src/ops.rs; edited crates/ctx2img-cli/src/ops.rs; edited crates/ctx2img-render/src/lib.rs
+- [x] Removed L1 overview image from dir paints; text roster is the navigation layer
 
 ## Active Branches
 - main (primary)
 
 ## Notes
+- [2026-07-17 12:56 UTC] `fix-repo`: Removed L1 overview image from dir paints; text roster is the navigation layer
 - [2026-07-17 12:51 UTC] `fix-overlap`: edited crates/ctx2img-cli/src/ops.rs; edited crates/ctx2img-cli/src/ops.rs; edited crates/ctx2img-render/src/lib.rs
 - [2026-07-17 11:38 UTC] `fix-overlap`: edited crates/ctx2img-cli/src/ops.rs; edited crates/ctx2img-cli/src/ops.rs; edited crates/ctx2img-render/src/lib.rs
 - [2026-07-17 11:38 UTC] `fix-overlap`: Shrink-to-fit for section-map pages: canvas walks down to real content size
