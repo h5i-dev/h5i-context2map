@@ -1,3 +1,3 @@
 # Git Branch Goal: wip
 
-Research image token accounting for Google Gemini (2.5/3) and Qwen-VL (2.5/3) from official docs
+Research prior art: repo-as-map visualization and repo context compression for LLMs (aider repo-map, code cities, optical context compression)
