@@ -12,11 +12,13 @@ Design a Rust tool (context2map) that converts repo/context into query-condition
 - [x] wrote design-notes.md
 - [x] Collected image-token accounting facts for Gemini 2.5/3 and Qwen2.5-VL/Qwen3-VL
 - [x] Prior-art research complete: aider repo-map mechanism, code-city/map viz landscape, optical context compression (DeepSeek-OCR, Glyph, PIXEL)
+- [x] Research digest complete: VLM image-token formulas (Anthropic 28px-patch, OpenAI tile+patch, Gemini media_resolution, Qwen 28/32px) + repo-map/code-cartography prior art + Rust crate audit
 
 ## Active Branches
 - main (primary)
 
 ## Notes
+- [2026-07-17 00:08 UTC] `wip`: Research digest complete: VLM image-token formulas (Anthropic 28px-patch, OpenAI tile+patch, Gemini media_resolution, Qwen 28/32px) + repo-map/code-cartography prior art + Rust crate audit
 - [2026-07-17 00:06 UTC] `wip`: Prior-art research complete: aider repo-map mechanism, code-city/map viz landscape, optical context compression (DeepSeek-OCR, Glyph, PIXEL)
 - [2026-07-17 00:06 UTC] `wip`: Collected image-token accounting facts for Gemini 2.5/3 and Qwen2.5-VL/Qwen3-VL
 - [2026-07-17 00:06 UTC] `wip`: wrote design-notes.md
