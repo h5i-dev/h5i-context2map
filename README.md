@@ -34,9 +34,9 @@ What you get depends on the input shape:
 Drill down when needed — pixels are for reading, text is for exactness:
 
 ```bash
-c2m zoom R3 --inscribe         # one module's full source as an image tile
+c2m paint src/auth -q "<task>" # focus: one module's full source as tiles
 c2m read F103 --lines 40:120   # guaranteed-exact text for quoting/editing
-c2m locate "session"           # find handles
+c2m read --find "session"      # search paths + symbols, answers in handles
 ```
 
 Every render prints its counterfactual (`~2550 image tok vs ~9772 text tok`)
@@ -54,8 +54,8 @@ cp -r skills/c2m ~/.claude/skills/   # Claude Code; any VLM agent can use the CL
 
 - `--provider claude|openai|gemini|qwen` — budgets solve against each
   provider's real image-token formula; canvases shrink to fit the content.
-- `--theme warm`, `--layout organic`, `c2m render` / `c2m paint --badge`
-  (the pretty parchment map) — cosmetics, gated by `c2m calibrate`.
+- `--theme warm|dark`, `--layout organic`, `c2m render` (the pretty
+  parchment map) — cosmetics, gated by `c2m calibrate`.
 - Design rationale, evidence, benchmark harness: [docs/DESIGN.md](docs/DESIGN.md).
 
 Apache-2.0 · embedded DejaVu fonts under their own license (`assets/fonts/`).
