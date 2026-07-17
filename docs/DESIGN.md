@@ -103,9 +103,23 @@ character accuracy; the shipped presets stay inside the ≥99% band. Independent
 that, the contract stays: pixels are for *reading*, `c2m read` is for *quoting* —
 the escape hatch is what lets the default density be aggressive.
 
-**Beyond repos.** The same engine renders *any* text stream (prompt, log, paper,
-dataset docs) into a map-folio: `c2m paint` — text flowed into decorated territory
-pages at budgeted density. Repos are the flagship input, not the only one.
+**Beyond repos — `c2m paint` is a peer product surface, not an afterthought.**
+The tool's real subject is *any text an agent must ingest*: system prompts, tool
+docs, human-typed prompts, markdown/docs, logs, papers, transcripts. Two input
+shapes share one engine:
+
+- **Structured corpora** (repos, doc trees) → the full atlas: geography +
+  relevance + handles + zoom.
+- **Text streams** (a prompt, a file, stdin) → `c2m paint`: the same
+  budget-solved density typesetting on folio pages, with the same spill
+  discipline and token accounting, plus lightweight structure (heading-derived
+  sections as territories when the text has structure worth mapping).
+
+The success metric for both is identical: **tokens cut without comprehension
+loss — ideally comprehension gained** (the map/section layer gives the model an
+overview a flat text stream never had). Every `paint`/`map` invocation reports
+the counterfactual: text tokens the content would have cost vs image tokens
+actually spent, so the cut is measured per call, never asserted.
 
 ## 3. Goals / non-goals
 

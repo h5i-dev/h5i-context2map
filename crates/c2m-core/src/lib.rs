@@ -6,6 +6,7 @@
 
 pub mod analysis;
 pub mod embed;
+pub mod factsheet;
 pub mod graph;
 pub mod hazard;
 pub mod history;

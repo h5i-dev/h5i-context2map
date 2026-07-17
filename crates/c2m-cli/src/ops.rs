@@ -529,6 +529,116 @@ pub fn render(
     Ok(())
 }
 
+// ---------------------------------------------------------------- paint
+
+/// Render arbitrary text (file or stdin) into dense image pages + a
+/// verbatim factsheet. The generic "any context → image" entry point.
+#[allow(clippy::too_many_arguments)]
+pub fn paint(
+    input: Option<&Path>,
+    provider: Provider,
+    font_px: f32,
+    no_reflow: bool,
+    out_dir: Option<&Path>,
+    force: bool,
+    json: bool,
+) -> Result<()> {
+    use c2m_render::paint as painter;
+    let (text, source_name) = match input {
+        Some(p) => (
+            std::fs::read_to_string(p).with_context(|| format!("read {}", p.display()))?,
+            p.file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or("text".into()),
+        ),
+        None => {
+            use std::io::Read;
+            let mut buf = String::new();
+            std::io::stdin()
+                .read_to_string(&mut buf)
+                .context("read stdin")?;
+            (buf, "stdin".to_string())
+        }
+    };
+    if text.trim().is_empty() {
+        bail!("nothing to paint (empty input)");
+    }
+
+    let profile = match provider {
+        Provider::Openai | Provider::OpenaiMini => painter::PaintProfile::openai(font_px),
+        _ => painter::PaintProfile::claude(font_px),
+    };
+    let content = if no_reflow {
+        text.clone()
+    } else {
+        painter::reflow(&text)
+    };
+    let pages = painter::paint(&content, &profile, !no_reflow)?;
+
+    // token accounting: honest counterfactual, estimate on both sides
+    let text_tokens = estimate_tokens(&text);
+    let image_tokens: u32 = pages
+        .iter()
+        .map(|p| provider.tokens(p.width, p.height))
+        .sum();
+    // +10% safety margin on the image side, mirroring field practice
+    let image_side = (image_tokens as f32 * 1.10) as u32;
+    if image_side >= text_tokens && !force {
+        eprintln!(
+            "· not painted: text is cheaper for this input (~{text_tokens} text tok ≤ ~{image_side} image tok incl. margin). Pass --force to paint anyway."
+        );
+        return Ok(());
+    }
+
+    let dir = out_dir
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    std::fs::create_dir_all(&dir)?;
+    let mut paths = Vec::new();
+    for (i, page) in pages.iter().enumerate() {
+        let path = dir.join(format!("{source_name}-page{}.png", i + 1));
+        std::fs::write(&path, &page.png)?;
+        paths.push(path);
+    }
+
+    let facts = c2m_core::factsheet::extract(&text, 40);
+    let sheet = c2m_core::factsheet::render_sheet(&facts);
+
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "pages": paths,
+                "image_tokens": image_tokens,
+                "text_tokens_estimate": text_tokens,
+                "savings_pct": (1.0 - image_tokens as f64 / text_tokens.max(1) as f64) * 100.0,
+                "factsheet": sheet,
+                "banner": painter::banner(pages.len(), !no_reflow),
+            })
+        );
+    } else {
+        println!("{}", painter::banner(pages.len(), !no_reflow));
+        for (p, page) in paths.iter().zip(&pages) {
+            println!(
+                "# page: {} ({}x{}, {} chars, ~{} image tok)",
+                p.display(),
+                page.width,
+                page.height,
+                page.chars,
+                provider.tokens(page.width, page.height)
+            );
+        }
+        if !sheet.is_empty() {
+            println!("{sheet}");
+        }
+        println!(
+            "# ~{image_tokens} image tok vs ~{text_tokens} text tok (~{:.0}% cut) — READ THE PAGES IN ORDER; quote identifiers from the factsheet line, not the image",
+            (1.0 - image_tokens as f64 / text_tokens.max(1) as f64) * 100.0
+        );
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------- calibrate
 
 pub fn calibrate(dir: Option<&Path>, live: bool, model: &str) -> Result<()> {

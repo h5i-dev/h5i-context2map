@@ -1,6 +1,7 @@
 //! c2m-render — scene graph, themes, and PNG/SVG backends.
 
 pub mod display;
+pub mod paint;
 pub mod raster;
 pub mod scene;
 pub mod svg;

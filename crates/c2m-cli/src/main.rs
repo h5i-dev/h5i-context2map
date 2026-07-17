@@ -84,6 +84,29 @@ enum Cmd {
     },
     /// Find handles by path/symbol substring.
     Locate { pattern: String },
+    /// Render ANY text (file or stdin) into dense image pages + a verbatim
+    /// factsheet — prompts, docs, tool output, markdown, logs.
+    Paint {
+        /// Input file (omit to read stdin).
+        input: Option<PathBuf>,
+        #[arg(long, value_enum, default_value = "claude")]
+        provider: Provider,
+        /// Mono size in px (smaller = denser; 8px is the validated default
+        /// for frontier readers).
+        #[arg(long, default_value_t = 8.0)]
+        font_px: f32,
+        /// Keep one source line per row instead of ↵-reflow packing.
+        #[arg(long)]
+        no_reflow: bool,
+        /// Output directory for page PNGs (default: current directory).
+        #[arg(long)]
+        out_dir: Option<PathBuf>,
+        /// Paint even when text tokens would be cheaper.
+        #[arg(long)]
+        force: bool,
+        #[arg(long)]
+        json: bool,
+    },
     /// Human-facing map (parchment theme by default).
     Render {
         /// Optional query to condition elevation (default: importance).
@@ -179,6 +202,23 @@ fn main() -> anyhow::Result<()> {
         ),
         Cmd::Read { target, lines } => ops::read(repo, &target, lines.as_deref()),
         Cmd::Locate { pattern } => ops::locate(repo, &pattern),
+        Cmd::Paint {
+            input,
+            provider,
+            font_px,
+            no_reflow,
+            out_dir,
+            force,
+            json,
+        } => ops::paint(
+            input.as_deref(),
+            provider,
+            font_px,
+            no_reflow,
+            out_dir.as_deref(),
+            force,
+            json,
+        ),
         Cmd::Render {
             query,
             theme,
