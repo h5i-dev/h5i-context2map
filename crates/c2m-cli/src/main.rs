@@ -58,6 +58,10 @@ enum Cmd {
         /// (parchment-flavored candidate — same grammar, softer colors).
         #[arg(long, default_value = "vlm")]
         theme: String,
+        /// Human-facing social card instead (parchment SVG, 1280x640) —
+        /// the README hero image. Input defaults to the current directory.
+        #[arg(long)]
+        badge: bool,
         /// Output directory for page PNGs (default: current directory).
         #[arg(long)]
         out_dir: Option<PathBuf>,
@@ -123,11 +127,6 @@ enum Cmd {
         #[arg(long)]
         title: Option<String>,
     },
-    /// README hero image: parchment SVG at social-card size.
-    Badge {
-        #[arg(long)]
-        out: Option<PathBuf>,
-    },
     /// (Re)index the repository into .c2m/ (map does this implicitly).
     Build,
     /// Legibility probes on a synthetic repo (offline bundle or --live).
@@ -192,6 +191,34 @@ fn main() -> anyhow::Result<()> {
         Cmd::Locate { pattern } => ops::locate(repo, &pattern),
         Cmd::Paint {
             input,
+            provider: _,
+            font_px: _,
+            no_reflow: _,
+            budget: _,
+            query: _,
+            index: _,
+            out_dir,
+            force: _,
+            json: _,
+            theme: _,
+            badge,
+        } if badge => ops::render(
+            input.as_deref().or(repo),
+            "",
+            "parchment",
+            "svg",
+            Some(
+                out_dir
+                    .map(|d| d.join("repo-map.svg"))
+                    .unwrap_or_else(|| std::path::PathBuf::from("repo-map.svg"))
+                    .as_path(),
+            ),
+            1280,
+            640,
+            None,
+        ),
+        Cmd::Paint {
+            input,
             provider,
             font_px: _,
             no_reflow: _,
@@ -202,6 +229,7 @@ fn main() -> anyhow::Result<()> {
             force: _,
             json,
             theme,
+            badge: _,
         } if index => ops::index_atlas(
             input.as_deref().or(repo),
             &query,
@@ -225,6 +253,7 @@ fn main() -> anyhow::Result<()> {
             force,
             json,
             theme,
+            badge: _,
         } => ops::paint(
             input.as_deref(),
             provider,
@@ -254,17 +283,6 @@ fn main() -> anyhow::Result<()> {
             width,
             height,
             title.as_deref(),
-        ),
-        Cmd::Badge { out } => ops::render(
-            repo,
-            "",
-            "parchment",
-            "svg",
-            out.as_deref()
-                .or(Some(std::path::Path::new("repo-map.svg"))),
-            1280,
-            640,
-            None,
         ),
         Cmd::Calibrate {
             dir,

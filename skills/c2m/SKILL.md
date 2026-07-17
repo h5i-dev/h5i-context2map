@@ -80,4 +80,4 @@ source of truth — exact code always comes from `c2m read` as text.
 - `--json` on `map`/`zoom` gives `{atlas_path, legend, ...}` when you need to
   script it.
 - For a human-facing map (README, PR description):
-  `c2m render --out map.svg` (parchment theme) or `c2m badge`.
+  `c2m render --out map.svg` (parchment theme) or `c2m paint --badge`.

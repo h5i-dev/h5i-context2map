@@ -59,7 +59,7 @@ c2m read F103 --lines 40:120          # exact source, always text
 c2m locate "session"                  # find handles
 
 c2m render --out map.svg              # the pretty human map (parchment theme)
-c2m badge                             # README-sized social image
+c2m paint --badge                     # README-sized social card (parchment SVG)
 ```
 
 Machine outputs take `--theme vlm` (stark, the calibrated default) or
@@ -69,7 +69,7 @@ becomes the default only if it matches stark's probe scores).
 
 <img src="assets/repo-map.svg" alt="Parchment map of this repo" width="55%"/>
 
-*(`c2m badge`: the human-facing parchment theme of the same geography)*
+*(`c2m paint --badge`: the human-facing parchment theme of the same geography)*
 
 `c2m` never spends tokens on a picture that doesn't pay for itself: `map`
 falls back to a text roster on small repos, and `paint` refuses when text is
