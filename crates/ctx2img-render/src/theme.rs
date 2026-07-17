@@ -110,7 +110,7 @@ fn row_interval(poly: &[(f32, f32)], w: f32, h: f32, y: f32) -> Option<(f32, f32
 /// Mono metrics, hard-wrap with `↪` continuation, comment lines dimmed,
 /// explicit spill marker when content doesn't fit. Emits plain `Op::Text`
 /// rows, so both backends (raster + SVG) render it with no new machinery.
-/// Returns (ops, source_lines_consumed).
+/// Returns (ops, source_lines_consumed, chars_that_did_not_fit).
 #[allow(clippy::too_many_arguments)]
 pub fn flow_text_ops(
     poly: &[(f32, f32)],
@@ -123,7 +123,7 @@ pub fn flow_text_ops(
     dim: Rgba,
     spill_note: &str,
     packed: bool,
-) -> (Vec<crate::display::Op>, usize) {
+) -> (Vec<crate::display::Op>, usize, usize) {
     use crate::display::{Op, TextAlign};
     let font = FontKind::Mono;
     let advance = text::measure("M", size_px, font).max(1.0);
@@ -192,6 +192,11 @@ pub fn flow_text_ops(
         });
     }
 
+    let spilled_chars = pending.as_ref().map_or(0, |(rest, _)| rest.chars().count())
+        + lines[consumed.min(lines.len())..]
+            .iter()
+            .map(|l| l.chars().count())
+            .sum::<usize>();
     if consumed < lines.len() || pending.is_some() {
         // the marker must stay inside the cell: fall back to a compact
         // form in narrow boxes, drop it entirely when even that spills
@@ -218,5 +223,5 @@ pub fn flow_text_ops(
             });
         }
     }
-    (ops, consumed)
+    (ops, consumed, spilled_chars)
 }

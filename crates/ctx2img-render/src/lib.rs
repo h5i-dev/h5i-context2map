@@ -240,4 +240,29 @@ mod tests {
         let png = render_png(&s, &VlmTheme).unwrap();
         assert!(png.len() > 2000);
     }
+
+    /// The canvas-sizing fit probe must agree with what the renderer can
+    /// actually show: everything fits on a roomy canvas, and shrinking the
+    /// same document far enough starts spilling.
+    #[test]
+    fn doc_spilled_chars_tracks_canvas_size() {
+        let sections: Vec<scene::DocSection> = (0..4)
+            .map(|i| scene::DocSection {
+                title: format!("section {i}"),
+                text: "the quick brown fox jumps over the lazy dog ".repeat(40),
+                band: 2,
+            })
+            .collect();
+        let cfg = |side: u32| SceneConfig {
+            width: side,
+            height: side,
+            text_px: 9.0,
+            boxes: true,
+            ..Default::default()
+        };
+        let roomy = theme_vlm::doc_spilled_chars(&scene::build_doc(&sections, &cfg(900)));
+        assert_eq!(roomy, 0, "everything fits on a roomy canvas");
+        let cramped = theme_vlm::doc_spilled_chars(&scene::build_doc(&sections, &cfg(220)));
+        assert!(cramped > 0, "a cramped canvas must report spill");
+    }
 }
