@@ -145,7 +145,10 @@ pub fn build_l1(built: &Built, saved: &mut SavedSites, cfg: &SceneConfig) -> Sce
                 .take(3)
                 .enumerate()
                 .map(|(rank, &(fi, _))| {
-                    let offsets = [(0.0f32, 0.0f32), (-0.45, 0.35), (0.45, -0.3)];
+                    // rank 0 sits *below* the anchor: the region label owns
+                    // the anchor itself, and a colliding label for the top
+                    // file would be dropped — the one name that must show
+                    let offsets = [(0.0f32, 0.40f32), (-0.5, -0.30), (0.5, -0.12)];
                     let (ox, oy) = offsets[rank];
                     let rr = shape.anchor_radius;
                     let label = if labeled.contains(&(ri, rank)) {
