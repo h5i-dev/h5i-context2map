@@ -241,7 +241,8 @@ pub fn render(
 /// `font_px` — canvases are sized to content, not to the allowance, so
 /// boxes carry no built-in slack (and unused budget becomes savings).
 fn fit_budget(chars: usize, n_boxes: usize, font_px: f32, budget: u32) -> u32 {
-    let advance = ctx2img_render::text::measure("M", font_px, ctx2img_render::display::FontKind::Mono);
+    let advance =
+        ctx2img_render::text::measure("M", font_px, ctx2img_render::display::FontKind::Mono);
     let line_h = font_px * 1.22;
     let header_px2 = (font_px * 1.2 * 2.4) * 420.0; // header strip per box
     let px2 = chars as f32 * advance * line_h * 1.08 + n_boxes as f32 * header_px2;
@@ -466,7 +467,8 @@ fn paint_doc(
     std::fs::write(&path, &png)?;
 
     let image_tokens = provider.tokens(w, h);
-    let sheet = ctx2img_core::factsheet::render_sheet(&ctx2img_core::factsheet::extract(full_text, 40));
+    let sheet =
+        ctx2img_core::factsheet::render_sheet(&ctx2img_core::factsheet::extract(full_text, 40));
     let toc: Vec<String> = doc_sections
         .iter()
         .enumerate()
