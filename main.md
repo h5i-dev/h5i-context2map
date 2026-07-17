@@ -56,11 +56,13 @@ Design a Rust tool (context2map) that converts repo/context into query-condition
 - [x] wrote verify-fresh-outputs.md; edited crates/ctx2img-cli/src/ops.rs; edited crates/ctx2img-cli/src/ops.rs
 - [x] Fixed section-map box corruption: clipped headers/spill markers to cells, floored tiny boxes
 - [x] edited crates/ctx2img-render/src/scene.rs; edited crates/ctx2img-cli/src/ops.rs; edited crates/ctx2img-render/src/lib.rs
+- [x] edited crates/ctx2img-render/src/scene.rs; edited crates/ctx2img-cli/src/ops.rs; edited crates/ctx2img-render/src/lib.rs
 
 ## Active Branches
 - main (primary)
 
 ## Notes
+- [2026-07-17 11:28 UTC] `fix-overlap`: edited crates/ctx2img-render/src/scene.rs; edited crates/ctx2img-cli/src/ops.rs; edited crates/ctx2img-render/src/lib.rs
 - [2026-07-17 05:40 UTC] `fix-overlap`: edited crates/ctx2img-render/src/scene.rs; edited crates/ctx2img-cli/src/ops.rs; edited crates/ctx2img-render/src/lib.rs
 - [2026-07-17 05:39 UTC] `fix-overlap`: Fixed section-map box corruption: clipped headers/spill markers to cells, floored tiny boxes
 - [2026-07-17 04:57 UTC] `wip`: wrote verify-fresh-outputs.md; edited crates/ctx2img-cli/src/ops.rs; edited crates/ctx2img-cli/src/ops.rs
