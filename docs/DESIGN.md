@@ -85,7 +85,8 @@ whole-repo-awareness tasks, and we say so in the README instead of overclaiming.
 
 - N1. Rendering source *text* into images for compression (that's Glyph/DeepSeek-OCR
   territory; requires trained decoders and breaks exactness).
-- N2. Being a general graph-viz library or IDE plugin (v1 is CLI + MCP).
+- N2. Being a general graph-viz library, IDE plugin, or server (v1 is a stateless CLI
+  plus a bundled agent skill; no MCP server — see §9).
 - N3. Semantic *execution* understanding (no dynamic analysis in v1; call edges are
   static approximations, labeled as such).
 - N4. Putting any instruction, policy, or security-relevant rule in pixels — ever.
@@ -122,9 +123,11 @@ flowchart LR
 | `c2m-layout` | stable geography: weighted Voronoi treemap (Nocaj–Brandes power diagrams — **we implement this; no maintained crate exists**, over `delaunator`/`voronoice`), marching-squares contours, force-refinement, edge bundling | `delaunator`, `kiddo` |
 | `c2m-render` | scene graph → SVG and raster; themes; label layout & collision | `tiny-skia` 0.12, `cosmic-text` 0.19 (shaping/measurement), `resvg`/`usvg` 0.47 (SVG export path), `image` |
 | `c2m-index` | handle registry, sidecar store, content-hash cache, legend emission | `serde`, `blake3` |
-| `c2m-cli` | UX, provider profiles, budget solver, `auto` representation picker | `clap` |
-| `c2m-mcp` | MCP server exposing the zoom protocol | `rmcp` |
+| `c2m-cli` | UX, provider profiles, budget solver, `auto` representation picker, `--json` output for agent hosts | `clap` |
 | `c2m-eval` | calibration + benchmark harness (talks to provider APIs) | `reqwest`, provider SDKs |
+
+(No server crate: agent integration is a bundled skill over the stateless CLI, §9. An
+`rmcp`-based MCP wrapper is deliberately deferred to the post-v1 backlog.)
 
 All pure Rust; no C deps required in the default build (`gix` over `git2`,
 `tiny-skia` over cairo). `git2` stays available behind a feature flag as fallback.
@@ -140,7 +143,6 @@ c2m zoom R3  --budget 1200                # region tile (image+text) or text-onl
 c2m read F103 [--lines 40:120]           # exact source (Layer 3)
 c2m locate "session|expiry"               # grep → handles
 c2m render --theme parchment --format svg # human mode, infinite-zoom SVG
-c2m serve --mcp                           # MCP server (atlas_* tools)
 c2m calibrate --provider claude           # legibility probe → tuned style preset
 c2m bench --suite localization            # accuracy-vs-budget benchmark
 ```
@@ -170,7 +172,7 @@ Every `c2m map` emits exactly three artifacts:
    - zoom instructions ("call atlas_zoom(R3) / atlas_read(F103)").
    The roster is deliberately a complete degraded fallback: legend-only ≈ aider repo map.
 3. **`index.json`** — sidecar resolving handles to `{path, byte_range, hash, kind}`.
-   Consumed by `c2m read`/MCP, **never** placed in model context.
+   Consumed by `c2m read`/`c2m zoom`, **never** placed in model context.
 
 ### 5.3 Scene graph
 
@@ -299,20 +301,40 @@ L2 tiles reuse the same grammar at higher magnification (same theme, same legend
 L3 is deliberately text: LensVLM found expansion-to-source is what restores parity, and
 CodeOCR shows code-in-pixels fails exactly when precision matters.
 
-## 9. MCP zoom protocol (`c2m serve --mcp`)
+## 9. Agent integration: a skill over a stateless CLI
 
-| Tool | Sig | Returns |
+The zoom protocol needs no server. Every operation is a pure function of what is on
+disk (`.c2m/` index cache + handle registry + working tree) — there is no session state
+to hold between calls — so each step is a fresh CLI invocation:
+
+| Verb | Sig | Returns |
 |---|---|---|
-| `atlas_overview` | `(query, budget?, provider?)` | L1 image + legend text |
-| `atlas_zoom` | `(handle: R\|F, budget?, mode: image\|text)` | L2 tile + roster, or text-only detail |
-| `atlas_read` | `(handle: F\|S, lines?)` | exact source text (L3) |
-| `atlas_locate` | `(pattern)` | matching handles + one-line context |
+| `c2m map` | `"<query>" --budget --provider [--json]` | writes L1 atlas image; prints legend + artifact paths to stdout |
+| `c2m zoom` | `<R\|F handle> [--mode image\|text]` | L2 tile image + roster, or text-only detail |
+| `c2m read` | `<F\|S handle> [--lines a:b]` | exact source text (L3), with `path:line` provenance |
+| `c2m locate` | `"<pattern>"` | matching handles + one-line context |
 
-Design rules: every image response embeds its own legend text (stateless); every
-response reminds the model of available next calls (LensVLM's trained loop must work
-*zero-shot* here, so the affordances are re-stated); `atlas_read` responses carry
-`path:line` provenance so edits/citations are grounded in real coordinates, not pixels.
-Server enforces repo-root sandboxing and read-only access.
+The integration surface is a **bundled skill** (`skills/c2m/SKILL.md`, installable into
+`.claude/skills/` or any host's skill directory). This is deliberately where the
+leverage is: the hard part of the LensVLM loop working *zero-shot* is teaching the
+**workflow**, and a skill document does that far better than MCP tool descriptions:
+
+1. `c2m map "<task>" --provider claude --budget 2000 --out atlas.png` (auto-builds the
+   index if missing/stale), then **read `atlas.png` with the host's file-read tool** —
+   that is how the image enters context; stdout stays text (legend + paths).
+2. Survey legend roster + map, pick handles; `c2m zoom R3` / `c2m read F103 --lines 40:120`.
+3. Budget discipline: trust `--representation auto`; on small repos the legend alone is
+   the context, no image read needed.
+
+CLI consequences: a `--json` mode emitting `{atlas_path, legend, handles[]}` for
+scripted hosts; quiet, parseable stderr and meaningful exit codes; every output
+re-states the available next verbs (stateless affordances, as LensVLM's loop assumes).
+
+**MCP is out of v1.** What it would buy — image bytes directly in tool results, and
+hosts without shell access (claude.ai web, IDE-only surfaces) — is not needed by the
+target audience (terminal coding agents, which all have Bash + file-read). Because the
+core is stateless, an `rmcp` wrapper over the same functions is a small post-v1 add if
+demand appears (backlog, §14 M5).
 
 ## 10. Calibration & evaluation (make legibility a tested property)
 
@@ -338,7 +360,7 @@ be semantic to the model":
   Claude/GPT/Gemini/Qwen.
 - *Whole-repo questions*: "where is auth handled?", "what depends on X?" — structure
   questions where the map should shine.
-- *End-to-end*: tokens-to-correct-patch on a small agent loop with/without atlas MCP.
+- *End-to-end*: tokens-to-correct-patch on a small agent loop with/without the atlas skill.
 - Report accuracy *and* total tokens; publish the harness so results are reproducible.
 
 Acceptance gates for calling the VLM theme "real": atlas ≥ text-map localization
@@ -360,8 +382,9 @@ engine:
 - Social card export (1280×640), optional git-history timelapse (Gource's 13k★ show the
   appetite) — post-v1.
 - Launch story: "your repo as a map your AI can actually read" — the eye-candy pulls
-  people in, the benchmark table (§10) makes it defensible, the MCP server makes it
-  useful in the first five minutes. This repo dogfoods its own badge from day one.
+  people in, the benchmark table (§10) makes it defensible, the bundled skill makes it
+  useful in the first five minutes (`cp -r skills/c2m .claude/skills/`). This repo
+  dogfoods its own badge from day one.
 
 ## 12. Performance & determinism targets
 
@@ -382,7 +405,7 @@ engine:
 | Voronoi-treemap implementation complexity | Med | it's the one novel algorithmic piece; Nocaj–Brandes is well-documented; fall back to squarified treemap (`streemap`) behind the same scene-graph interface if it slips |
 | Handle drift breaking cached prompts/transcripts | Med | persistent registry, tombstones, rename-following (§5.1) |
 | Prompt-injection via file contents leaking into the map | Med | labels are names+handles only, sanitized charset; file *content* never rasterized at L1/L2; hazard layer actively marks untrusted-input surfaces |
-| Scope creep into IDE/graph-viz platform | Med | non-goals (§3); CLI+MCP only for v1 |
+| Scope creep into IDE/graph-viz platform | Med | non-goals (§3); CLI + skill only for v1 |
 | Reasoning collapse on image input (models answer tersely) | Low-Med | map is for *navigation*, reasoning happens over L3 text; control prompt keeps chain-of-thought in text |
 
 ## 14. Milestones
@@ -393,9 +416,10 @@ engine:
   `c2m badge`. *Ship the eye-candy first — traction starts here.*
 - **M2 — Query-conditioned VLM theme.** relevance field, elevation bands, handles,
   legend/roster, provider budget solver.
-- **M3 — Zoom protocol.** L2 tiles, `read`/`locate`, MCP server.
+- **M3 — Zoom protocol.** L2 tiles, `read`/`locate`, `--json` mode, bundled agent skill.
 - **M4 — Calibration + benchmarks.** presets per model, public scorecard, README table.
-- **M5 — Growth features.** GitHub Action polish, `diff --map`, social cards, timelapse.
+- **M5 — Growth features.** GitHub Action polish, `diff --map`, social cards, timelapse;
+  optional `rmcp` MCP wrapper if non-shell hosts ask for it.
 
 Each milestone is independently demoable; M0→M2 are sequential, M1 can proceed in
 parallel with M2 after M0.
