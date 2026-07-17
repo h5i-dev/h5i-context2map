@@ -25,11 +25,13 @@ Design a Rust tool (context2map) that converts repo/context into query-condition
 - [x] edited crates/c2m-render/src/scene.rs; wrote h5i-commit-quoting.md; wrote MEMORY.md
 - [x] edited crates/c2m-render/src/scene.rs; wrote h5i-commit-quoting.md; wrote MEMORY.md
 - [x] edited crates/c2m-cli/src/main.rs; edited crates/c2m-render/src/paint.rs; edited crates/c2m-render/src/paint.rs
+- [x] edited skills/c2m/SKILL.md; edited skills/c2m/SKILL.md; edited skills/c2m/SKILL.md
 
 ## Active Branches
 - main (primary)
 
 ## Notes
+- [2026-07-17 01:54 UTC] `wip`: edited skills/c2m/SKILL.md; edited skills/c2m/SKILL.md; edited skills/c2m/SKILL.md
 - [2026-07-17 01:49 UTC] `wip`: edited crates/c2m-cli/src/main.rs; edited crates/c2m-render/src/paint.rs; edited crates/c2m-render/src/paint.rs
 - [2026-07-17 01:39 UTC] `wip`: edited crates/c2m-render/src/scene.rs; wrote h5i-commit-quoting.md; wrote MEMORY.md
 - [2026-07-17 01:38 UTC] `wip`: edited crates/c2m-render/src/scene.rs; wrote h5i-commit-quoting.md; wrote MEMORY.md
