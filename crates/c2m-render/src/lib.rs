@@ -14,7 +14,7 @@ use anyhow::Result;
 pub use scene::{Scene, SceneConfig};
 pub use theme::Theme;
 pub use theme_parchment::ParchmentTheme;
-pub use theme_vlm::VlmTheme;
+pub use theme_vlm::{VlmTheme, WarmTheme};
 
 /// Render a scene to PNG bytes with the given theme.
 pub fn render_png(scene: &Scene, theme: &dyn Theme) -> Result<Vec<u8>> {

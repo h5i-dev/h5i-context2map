@@ -54,6 +54,10 @@ enum Cmd {
         /// Input defaults to the current directory.
         #[arg(long)]
         index: bool,
+        /// Machine palette: `vlm` (stark, calibrated default) or `warm`
+        /// (parchment-flavored candidate — same grammar, softer colors).
+        #[arg(long, default_value = "vlm")]
+        theme: String,
         /// Output directory for page PNGs (default: current directory).
         #[arg(long)]
         out_dir: Option<PathBuf>,
@@ -88,6 +92,9 @@ enum Cmd {
         /// Mono text size in px for --inscribe.
         #[arg(long, default_value_t = 10.0)]
         text_px: f32,
+        /// Machine palette: `vlm` (stark default) or `warm`.
+        #[arg(long, default_value = "vlm")]
+        theme: String,
     },
     /// Print exact source for a handle (F#/S#) or path. Layer 3: always text.
     Read {
@@ -132,6 +139,10 @@ enum Cmd {
         live: bool,
         #[arg(long, default_value = c2m_eval::live::DEFAULT_MODEL)]
         model: String,
+        /// Machine palette to probe: `vlm` or `warm` — A/B them here before
+        /// changing any default.
+        #[arg(long, default_value = "vlm")]
+        theme: String,
     },
     /// Localization benchmark from a tasks JSON file.
     Bench {
@@ -163,6 +174,7 @@ fn main() -> anyhow::Result<()> {
             json,
             inscribe,
             text_px,
+            theme,
         } => ops::zoom(
             repo,
             &handle,
@@ -174,6 +186,7 @@ fn main() -> anyhow::Result<()> {
             json,
             inscribe,
             text_px,
+            &theme,
         ),
         Cmd::Read { target, lines } => ops::read(repo, &target, lines.as_deref()),
         Cmd::Locate { pattern } => ops::locate(repo, &pattern),
@@ -188,6 +201,7 @@ fn main() -> anyhow::Result<()> {
             out_dir,
             force: _,
             json,
+            theme,
         } if index => ops::index_atlas(
             input.as_deref().or(repo),
             &query,
@@ -197,6 +211,7 @@ fn main() -> anyhow::Result<()> {
             json,
             ops::Representation::Auto,
             false,
+            &theme,
         ),
         Cmd::Paint {
             input,
@@ -209,6 +224,7 @@ fn main() -> anyhow::Result<()> {
             out_dir,
             force,
             json,
+            theme,
         } => ops::paint(
             input.as_deref(),
             provider,
@@ -219,6 +235,7 @@ fn main() -> anyhow::Result<()> {
             &query,
             force,
             json,
+            &theme,
         ),
         Cmd::Render {
             query,
@@ -249,7 +266,12 @@ fn main() -> anyhow::Result<()> {
             640,
             None,
         ),
-        Cmd::Calibrate { dir, live, model } => ops::calibrate(dir.as_deref(), live, &model),
+        Cmd::Calibrate {
+            dir,
+            live,
+            model,
+            theme,
+        } => ops::calibrate(dir.as_deref(), live, &model, &theme),
         Cmd::Bench {
             tasks,
             live,

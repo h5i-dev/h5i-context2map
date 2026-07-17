@@ -8,11 +8,22 @@ use c2m_index::sidecar;
 use c2m_index::workspace::{Built, Workspace};
 use c2m_index::{HandleRegistry, Kind};
 use c2m_layout::SavedSites;
-use c2m_render::{render_png, render_svg, scene, ParchmentTheme, SceneConfig, Theme, VlmTheme};
+use c2m_render::{
+    render_png, render_svg, scene, ParchmentTheme, SceneConfig, Theme, VlmTheme, WarmTheme,
+};
 use std::path::{Path, PathBuf};
 
 pub const FOOTER: &str =
     "next: `c2m zoom R#` region detail · `c2m read F#|S#` exact source · `c2m locate <pat>` search";
+
+/// Resolve a machine-theme name; stark is the calibrated default.
+pub fn machine_theme(name: &str) -> Result<&'static dyn Theme> {
+    Ok(match name {
+        "vlm" | "stark" => &VlmTheme,
+        "warm" => &WarmTheme,
+        other => bail!("unknown machine theme `{other}` (vlm|warm)"),
+    })
+}
 
 pub struct Ctx {
     pub ws: Workspace,
@@ -90,7 +101,9 @@ pub fn index_atlas(
     json: bool,
     representation: Representation,
     no_history: bool,
+    theme: &str,
 ) -> Result<()> {
+    let theme = machine_theme(theme)?;
     let ctx = open(repo)?;
     let built = ctx.ws.build(query, ctx.now, !no_history)?;
     print_stats(&built);
@@ -152,7 +165,7 @@ pub fn index_atlas(
     };
     let s = scene::build_l1(&built, &mut saved, &cfg);
     saved.save(&ctx.ws.layout_path())?;
-    let png = render_png(&s, &VlmTheme)?;
+    let png = render_png(&s, theme)?;
     std::fs::write(&atlas_path, &png).with_context(|| format!("write {atlas_path:?}"))?;
     std::fs::write(&legend_path, &legend)?;
     sidecar::write(&sidecar::build_sidecar(&built, query), &sidecar_path)?;
@@ -208,7 +221,9 @@ pub fn zoom(
     json: bool,
     inscribe: bool,
     text_px: f32,
+    theme: &str,
 ) -> Result<()> {
+    let theme = machine_theme(theme)?;
     // inscribe tiles carry actual source text: they earn a larger default canvas
     let budget = budget.unwrap_or(if inscribe { 3600 } else { 1200 });
     let ctx = open(repo)?;
@@ -258,7 +273,7 @@ pub fn zoom(
                     if inscribe { Some(&loader) } else { None },
                 );
                 saved.save(&ctx.ws.dir.join(format!("layout-{handle}.json")))?;
-                let png = render_png(&s, &VlmTheme)?;
+                let png = render_png(&s, theme)?;
                 let path = out
                     .map(Path::to_path_buf)
                     .unwrap_or_else(|| ctx.ws.dir.join(format!("zoom-{handle}.png")));
@@ -500,7 +515,8 @@ pub fn render(
     let built = ctx.ws.build(query, ctx.now, true)?;
     print_stats(&built);
     let theme: &dyn Theme = match theme_name {
-        "vlm" => &VlmTheme,
+        "vlm" | "stark" => &VlmTheme,
+        "warm" => &WarmTheme,
         _ => &ParchmentTheme,
     };
     let name = repo_name(&ctx.ws);
@@ -550,10 +566,11 @@ pub fn paint(
     query: &str,
     force: bool,
     json: bool,
+    theme: &str,
 ) -> Result<()> {
     if let Some(p) = input {
         if p.is_dir() {
-            return paint_repo(p, provider, font_px, out_dir, budget, query, json);
+            return paint_repo(p, provider, font_px, out_dir, budget, query, json, theme);
         }
     }
     let (text, source_name) = match input {
@@ -590,6 +607,7 @@ pub fn paint(
                 query,
                 force,
                 json,
+                theme,
             );
         }
     }
@@ -683,7 +701,9 @@ fn paint_doc(
     query: &str,
     force: bool,
     json: bool,
+    theme: &str,
 ) -> Result<()> {
+    let theme = machine_theme(theme)?;
     // profitability: the map must cost less than the text it carries; size
     // it down to ~70% of the text cost, and refuse below a useful floor
     let text_tokens = estimate_tokens(full_text);
@@ -717,7 +737,7 @@ fn paint_doc(
         ..Default::default()
     };
     let s = scene::build_doc(&doc_sections, &cfg);
-    let png = render_png(&s, &VlmTheme)?;
+    let png = render_png(&s, theme)?;
     let dir = out_dir
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
@@ -760,7 +780,9 @@ fn paint_repo(
     budget: Option<u32>,
     query: &str,
     json: bool,
+    theme: &str,
 ) -> Result<()> {
+    let theme = machine_theme(theme)?;
     let budget = budget.unwrap_or(12_000);
     let ws = Workspace::open(root)?;
     let now = std::time::SystemTime::now()
@@ -790,7 +812,7 @@ fn paint_repo(
     let overview = scene::build_l1(&built, &mut saved, &cfg);
     saved.save(&ws.layout_path())?;
     let overview_path = dir.join(format!("{name}-atlas.png"));
-    std::fs::write(&overview_path, render_png(&overview, &VlmTheme)?)?;
+    std::fs::write(&overview_path, render_png(&overview, theme)?)?;
     spent += provider.tokens(ow, oh);
     pages.push((overview_path, ow, oh));
 
@@ -842,7 +864,7 @@ fn paint_repo(
         );
         tile_sites.save(&ws.dir.join(format!("layout-{handle}.json")))?;
         let path = dir.join(format!("{name}-{handle}.png"));
-        std::fs::write(&path, render_png(&tile, &VlmTheme)?)?;
+        std::fs::write(&path, render_png(&tile, theme)?)?;
         spent += provider.tokens(tw, th);
         pages.push((path, tw, th));
         painted_loc += region.loc;
@@ -939,7 +961,8 @@ fn report_paint(
 
 // ---------------------------------------------------------------- calibrate
 
-pub fn calibrate(dir: Option<&Path>, live: bool, model: &str) -> Result<()> {
+pub fn calibrate(dir: Option<&Path>, live: bool, model: &str, theme: &str) -> Result<()> {
+    let theme = machine_theme(theme)?;
     let tmp;
     let dir = match dir {
         Some(d) => d.to_path_buf(),
@@ -963,7 +986,7 @@ pub fn calibrate(dir: Option<&Path>, live: bool, model: &str) -> Result<()> {
         ..Default::default()
     };
     let s = scene::build_l1(&built, &mut saved, &cfg);
-    let png = render_png(&s, &VlmTheme)?;
+    let png = render_png(&s, theme)?;
 
     let bundle = ws.dir.join("calibration");
     std::fs::create_dir_all(&bundle)?;

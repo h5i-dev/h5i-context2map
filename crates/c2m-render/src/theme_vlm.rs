@@ -1,6 +1,9 @@
-//! VLM theme: engineered for machine legibility. Discrete band fills,
-//! high-contrast borders, redundant encoding (color + contour + printed
-//! band number), hard label floors, no decoration that costs attention.
+//! Machine-facing themes: engineered for VLM legibility. Discrete band
+//! fills, high-contrast borders, redundant encoding (color + contour +
+//! printed band number), hard label floors, no decoration that costs
+//! attention. Themes differ in **palette only** — the encoding grammar
+//! (bands, handles, hatches, swatch legend) is shared, so palettes can be
+//! A/B'd fairly by the calibration harness.
 
 use crate::display::{DisplayList, FontKind, Op, Rgba, TextAlign};
 use crate::scene::Scene;
@@ -8,41 +11,76 @@ use crate::theme::{flow_text_ops, label_box, poly_bbox_px, LabelPlacer, Theme};
 use c2m_core::graph::EdgeKind;
 use c2m_core::hazard;
 
-pub struct VlmTheme;
-
-const SEA: Rgba = Rgba::opaque(255, 255, 255);
-const INK: Rgba = Rgba::opaque(20, 20, 20);
-const HALO: Rgba = Rgba::opaque(255, 255, 255);
-const CONTOUR: Rgba = Rgba::opaque(120, 120, 120);
-const HAZARD: Rgba = Rgba::opaque(200, 40, 40);
-const ISLAND: Rgba = Rgba::opaque(200, 200, 200);
-
-/// Sequential, colorblind-safe band ramp (light sand → deep teal).
-pub fn band_color(band: u8) -> Rgba {
-    match band {
-        1 => Rgba::opaque(0xF2, 0xF0, 0xE6),
-        2 => Rgba::opaque(0xCB, 0xE5, 0xC9),
-        3 => Rgba::opaque(0x96, 0xD1, 0xB4),
-        4 => Rgba::opaque(0x57, 0xB0, 0xA2),
-        _ => Rgba::opaque(0x2B, 0x86, 0x89),
-    }
+/// A machine-legibility palette. Every color must survive the calibration
+/// probes; prettiness is welcome, accuracy is gating.
+pub struct MachinePalette {
+    pub sea: Rgba,
+    pub ink: Rgba,
+    pub halo: Rgba,
+    pub contour: Rgba,
+    pub hazard: Rgba,
+    pub island: Rgba,
+    /// Sequential elevation ramp, band 1..=5 (light -> dark).
+    pub bands: [Rgba; 5],
+    /// What band tints mix toward under inscribe text (paper color).
+    pub tint_base: Rgba,
 }
 
-/// Inscribe mode: band tint light enough that dark mono text stays readable —
-/// the elevation wash sits *under* the text.
-pub fn band_tint(band: u8) -> Rgba {
-    let c = band_color(band);
-    let mix = |v: u8| (v as f32 * 0.35 + 255.0 * 0.65) as u8;
-    Rgba::opaque(mix(c.0), mix(c.1), mix(c.2))
-}
+/// Stark: maximum-contrast near-black on white — the production default
+/// (matches what pxpipe field-validated for dense text reading).
+pub const STARK: MachinePalette = MachinePalette {
+    sea: Rgba::opaque(255, 255, 255),
+    ink: Rgba::opaque(20, 20, 20),
+    halo: Rgba::opaque(255, 255, 255),
+    contour: Rgba::opaque(120, 120, 120),
+    hazard: Rgba::opaque(200, 40, 40),
+    island: Rgba::opaque(200, 200, 200),
+    bands: [
+        Rgba::opaque(0xF2, 0xF0, 0xE6),
+        Rgba::opaque(0xCB, 0xE5, 0xC9),
+        Rgba::opaque(0x96, 0xD1, 0xB4),
+        Rgba::opaque(0x57, 0xB0, 0xA2),
+        Rgba::opaque(0x2B, 0x86, 0x89),
+    ],
+    tint_base: Rgba::opaque(255, 255, 255),
+};
+
+/// Warm: parchment-inspired **calibration candidate** — the cute theme at
+/// machine-safe contrast: flat fills, no grain, no hillshade, near-black
+/// warm ink on light paper. Promote to default only if
+/// `c2m calibrate --theme warm` matches stark's probe scores.
+pub const WARM: MachinePalette = MachinePalette {
+    sea: Rgba::opaque(0xF8, 0xF2, 0xE4),
+    ink: Rgba::opaque(0x2A, 0x1F, 0x12),
+    halo: Rgba::opaque(0xFC, 0xF8, 0xEE),
+    contour: Rgba::opaque(0xA8, 0x8F, 0x6A),
+    hazard: Rgba::opaque(0xB5, 0x35, 0x25),
+    island: Rgba::opaque(0xDD, 0xD0, 0xB4),
+    bands: [
+        Rgba::opaque(0xF6, 0xEE, 0xDC),
+        Rgba::opaque(0xEC, 0xD9, 0xB2),
+        Rgba::opaque(0xDD, 0xBB, 0x87),
+        Rgba::opaque(0xC4, 0x92, 0x59),
+        Rgba::opaque(0x93, 0x5F, 0x33),
+    ],
+    tint_base: Rgba::opaque(0xFA, 0xF5, 0xE8),
+};
 
 /// Minimum label height in raster px; below this, drop the label (the
 /// legend roster still carries it) rather than render unreadable text.
 const MIN_LABEL_PX: f32 = 12.0;
 
-impl Theme for VlmTheme {
-    fn background(&self) -> Rgba {
-        SEA
+impl MachinePalette {
+    fn band(&self, band: u8) -> Rgba {
+        self.bands[(band.clamp(1, 5) - 1) as usize]
+    }
+
+    /// Inscribe mode: band wash light enough for dark mono text on top.
+    fn tint(&self, band: u8) -> Rgba {
+        let c = self.band(band);
+        let b = self.tint_base;
+        let mix = |v: u8, base: u8| (v as f32 * 0.35 + base as f32 * 0.65) as u8;
+        Rgba::opaque(mix(c.0, b.0), mix(c.1, b.1), mix(c.2, b.2))
     }
 
     fn terrain(&self, scene: &Scene) -> DisplayList {
@@ -52,7 +90,7 @@ impl Theme for VlmTheme {
         for part in &scene.coast {
             dl.push(Op::Fill {
                 poly: part.clone(),
-                color: band_color(1),
+                color: self.band(1),
             });
         }
         let inscribe = scene.cells.iter().any(|c| c.text.is_some());
@@ -64,9 +102,9 @@ impl Theme for VlmTheme {
             let c = &scene.cells[i];
             if c.poly.len() >= 3 {
                 let color = if c.text.is_some() {
-                    band_tint(c.band)
+                    self.tint(c.band)
                 } else {
-                    band_color(c.band)
+                    self.band(c.band)
                 };
                 dl.push(Op::Fill {
                     poly: c.poly.clone(),
@@ -83,7 +121,7 @@ impl Theme for VlmTheme {
             for line in lines {
                 dl.push(Op::Stroke {
                     path: line.clone(),
-                    color: CONTOUR,
+                    color: self.contour,
                     width_px: 0.9,
                     closed: false,
                     dash: None,
@@ -97,7 +135,7 @@ impl Theme for VlmTheme {
             }
             dl.push(Op::Stroke {
                 path: c.poly.clone(),
-                color: INK,
+                color: self.ink,
                 width_px: 1.8,
                 closed: true,
                 dash: None,
@@ -105,13 +143,13 @@ impl Theme for VlmTheme {
             if c.hazards != 0 && c.text.is_none() {
                 dl.push(Op::Hatch {
                     poly: c.poly.clone(),
-                    color: Rgba(HAZARD.0, HAZARD.1, HAZARD.2, 70),
+                    color: Rgba(self.hazard.0, self.hazard.1, self.hazard.2, 70),
                     spacing_px: 13.0,
                     width_px: 1.0,
                 });
                 dl.push(Op::Stroke {
                     path: c.poly.clone(),
-                    color: HAZARD,
+                    color: self.hazard,
                     width_px: 1.4,
                     closed: true,
                     dash: Some((6.0, 3.0)),
@@ -122,7 +160,7 @@ impl Theme for VlmTheme {
         for part in &scene.coast {
             dl.push(Op::Stroke {
                 path: part.clone(),
-                color: INK,
+                color: self.ink,
                 width_px: 2.4,
                 closed: true,
                 dash: None,
@@ -178,10 +216,10 @@ impl Theme for VlmTheme {
                     pos: (cxm / w, hy / h),
                     text: header,
                     size_px: hsize,
-                    color: INK,
+                    color: self.ink,
                     font: FontKind::SansBold,
                     align: TextAlign::Center,
-                    halo: Some(HALO),
+                    halo: Some(self.halo),
                 });
                 let spill_note = if c.handle.starts_with('F') {
                     format!("c2m read {}", c.handle)
@@ -195,7 +233,7 @@ impl Theme for VlmTheme {
                     lines,
                     scene.text_px,
                     hy + hsize * 0.5,
-                    INK,
+                    self.ink,
                     Rgba::opaque(128, 128, 128),
                     &spill_note,
                 );
@@ -213,10 +251,10 @@ impl Theme for VlmTheme {
                     pos: (c.anchor.0, c.anchor.1),
                     text: label,
                     size_px: size,
-                    color: INK,
+                    color: self.ink,
                     font: FontKind::SansBold,
                     align: TextAlign::Center,
-                    halo: Some(HALO),
+                    halo: Some(self.halo),
                 });
                 let tags = hazard::tags(c.hazards);
                 if !tags.is_empty() {
@@ -228,10 +266,10 @@ impl Theme for VlmTheme {
                             pos: (c.anchor.0, c.anchor.1 + bh / h),
                             text: tag,
                             size_px: tsize,
-                            color: HAZARD,
+                            color: self.hazard,
                             font: FontKind::Sans,
                             align: TextAlign::Center,
-                            halo: Some(HALO),
+                            halo: Some(self.halo),
                         });
                     }
                 }
@@ -244,8 +282,8 @@ impl Theme for VlmTheme {
                 dl.push(Op::Circle {
                     center: city.pos,
                     r_px: city.r_px,
-                    fill: Some(HALO),
-                    stroke: Some((INK, 1.4)),
+                    fill: Some(self.halo),
+                    stroke: Some((self.ink, 1.4)),
                 });
                 if city.label.is_empty() {
                     continue;
@@ -258,10 +296,10 @@ impl Theme for VlmTheme {
                         pos: (city.pos.0, city.pos.1 + (bh * 0.75 + city.r_px) / h),
                         text: city.label.clone(),
                         size_px: size,
-                        color: INK,
+                        color: self.ink,
                         font: FontKind::Sans,
                         align: TextAlign::Center,
-                        halo: Some(HALO),
+                        halo: Some(self.halo),
                     });
                 }
             }
@@ -272,8 +310,8 @@ impl Theme for VlmTheme {
             dl.push(Op::Circle {
                 center: isl.pos,
                 r_px: isl.r * w,
-                fill: Some(ISLAND),
-                stroke: Some((INK, 1.0)),
+                fill: Some(self.island),
+                stroke: Some((self.ink, 1.0)),
             });
             let size = (h * 0.011).max(MIN_LABEL_PX);
             let (bw, bh) = label_box(&isl.label, size, FontKind::Sans);
@@ -286,7 +324,7 @@ impl Theme for VlmTheme {
                     color: Rgba::opaque(80, 80, 80),
                     font: FontKind::Sans,
                     align: TextAlign::Center,
-                    halo: Some(HALO),
+                    halo: Some(self.halo),
                 });
             }
         }
@@ -298,10 +336,10 @@ impl Theme for VlmTheme {
                 pos: (0.012, 0.028),
                 text: scene.title.clone(),
                 size_px: hsize * 1.15,
-                color: INK,
+                color: self.ink,
                 font: FontKind::Mono,
                 align: TextAlign::Left,
-                halo: Some(HALO),
+                halo: Some(self.halo),
             });
         }
         if !scene.subtitle.is_empty() {
@@ -312,7 +350,7 @@ impl Theme for VlmTheme {
                 color: Rgba::opaque(70, 70, 70),
                 font: FontKind::Mono,
                 align: TextAlign::Left,
-                halo: Some(HALO),
+                halo: Some(self.halo),
             });
         }
 
@@ -325,11 +363,11 @@ impl Theme for VlmTheme {
             let poly = vec![(x, y), (x + sw, y), (x + sw, y + sh), (x, y + sh)];
             dl.push(Op::Fill {
                 poly: poly.clone(),
-                color: band_color(band),
+                color: self.band(band),
             });
             dl.push(Op::Stroke {
                 path: poly,
-                color: INK,
+                color: self.ink,
                 width_px: 1.0,
                 closed: true,
                 dash: None,
@@ -338,7 +376,7 @@ impl Theme for VlmTheme {
                 pos: (x + sw / 2.0, y + sh * 0.78),
                 text: format!("{band}"),
                 size_px: (h * sh * 0.62).max(9.0),
-                color: INK,
+                color: self.ink,
                 font: FontKind::Sans,
                 align: TextAlign::Center,
                 halo: None,
@@ -348,12 +386,42 @@ impl Theme for VlmTheme {
             pos: (1.0 - 0.02 - sw * 5.0, 1.0 - 0.035),
             text: "relevance ▲".to_string(),
             size_px: (h * 0.011).max(9.0),
-            color: INK,
+            color: self.ink,
             font: FontKind::Sans,
             align: TextAlign::Left,
-            halo: Some(HALO),
+            halo: Some(self.halo),
         });
         dl
+    }
+}
+
+/// Stark machine theme — the default everywhere a model is the reader.
+pub struct VlmTheme;
+/// Warm machine theme — same grammar, parchment-flavored palette
+/// (calibration candidate; see `c2m calibrate --theme warm`).
+pub struct WarmTheme;
+
+impl Theme for VlmTheme {
+    fn background(&self) -> Rgba {
+        STARK.sea
+    }
+    fn terrain(&self, scene: &Scene) -> DisplayList {
+        STARK.terrain(scene)
+    }
+    fn overlay(&self, scene: &Scene) -> DisplayList {
+        STARK.overlay(scene)
+    }
+}
+
+impl Theme for WarmTheme {
+    fn background(&self) -> Rgba {
+        WARM.sea
+    }
+    fn terrain(&self, scene: &Scene) -> DisplayList {
+        WARM.terrain(scene)
+    }
+    fn overlay(&self, scene: &Scene) -> DisplayList {
+        WARM.overlay(scene)
     }
 }
 

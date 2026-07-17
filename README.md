@@ -62,6 +62,11 @@ c2m render --out map.svg              # the pretty human map (parchment theme)
 c2m badge                             # README-sized social image
 ```
 
+Machine outputs take `--theme vlm` (stark, the calibrated default) or
+`--theme warm` (the parchment-flavored palette at full contrast — same
+encoding grammar, so `c2m calibrate --theme warm` can A/B it fairly; it
+becomes the default only if it matches stark's probe scores).
+
 <img src="assets/repo-map.svg" alt="Parchment map of this repo" width="55%"/>
 
 *(`c2m badge`: the human-facing parchment theme of the same geography)*
