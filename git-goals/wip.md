@@ -1,3 +1,3 @@
 # Git Branch Goal: wip
 
-Research optical/visual context compression papers (DeepSeek-OCR, arXiv 2604.02492/LensVLM, Glyph, related work) and return structured digest
+Research image token accounting across VLM APIs and prior art for repo-as-map visualization / repo context compression
