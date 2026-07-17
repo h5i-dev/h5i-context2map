@@ -180,13 +180,13 @@ fn main() -> anyhow::Result<()> {
         Cmd::Paint {
             input,
             provider,
-            font_px,
-            no_reflow,
+            font_px: _,
+            no_reflow: _,
             budget,
             query,
             index,
             out_dir,
-            force,
+            force: _,
             json,
         } if index => ops::index_atlas(
             input.as_deref().or(repo),
