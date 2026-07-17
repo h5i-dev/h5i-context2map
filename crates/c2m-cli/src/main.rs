@@ -12,8 +12,8 @@ use std::path::PathBuf;
 #[command(
     name = "c2m",
     version,
-    about = "context2map: render agent context as images that cost a fraction of the tokens.\n\nMain command — c2m paint <input>: any text-shaped input becomes images that CARRY THE FULL TEXT,\nshaped by its structure (directory → atlas folio of full-source region tiles; markdown → section\nmap; flat text → dense pages), always with a verbatim factsheet.\n\nIndex mode — c2m paint --index -q \"<task>\": index-only atlas (~2k tok) for navigating a repo without reading it.",
-    after_help = "repo navigation loop: c2m paint --index -q \"<task>\" → read the atlas → c2m zoom R# [--inscribe] → c2m read F#\nrender/badge are human-facing; build/calibrate/bench are plumbing."
+    about = "context2map: render agent context as images that cost a fraction of the tokens.\n\nMain command — c2m paint <input>: any text-shaped input becomes images that CARRY THE FULL TEXT,\nshaped by its structure (directory → atlas folio of full-source region tiles; markdown → section\nmap; flat text → dense pages), always with a verbatim factsheet.\n\nNavigation mode — c2m paint <dir> --budget 2000 -q \"<task>\": at a small budget the folio degrades to the index atlas (or a text roster if that's cheaper).",
+    after_help = "repo navigation loop: c2m paint . --budget 2000 -q \"<task>\" → read the atlas → c2m zoom R# [--inscribe] → c2m read F#\nrender/badge are human-facing; build/calibrate/bench are plumbing."
 )]
 struct Cli {
     /// Repository root (default: current directory).
@@ -49,11 +49,6 @@ enum Cmd {
         /// Optional task/query: conditions region and section relevance.
         #[arg(long, short = 'q', default_value = "")]
         query: String,
-        /// Index-only mode (formerly `c2m map`): render just the overview
-        /// atlas + legend + handles (~2k tok) — navigate without reading.
-        /// Input defaults to the current directory.
-        #[arg(long)]
-        index: bool,
         /// Machine palette: `vlm` (stark, calibrated default) or `warm`
         /// (parchment-flavored candidate — same grammar, softer colors).
         #[arg(long, default_value = "vlm")]
@@ -205,7 +200,6 @@ fn main() -> anyhow::Result<()> {
             no_reflow: _,
             budget: _,
             query: _,
-            index: _,
             out_dir,
             force: _,
             json: _,
@@ -230,36 +224,10 @@ fn main() -> anyhow::Result<()> {
         Cmd::Paint {
             input,
             provider,
-            font_px: _,
-            no_reflow: _,
-            budget,
-            query,
-            index,
-            out_dir,
-            force: _,
-            json,
-            theme,
-            layout: _,
-            badge: _,
-        } if index => ops::index_atlas(
-            input.as_deref().or(repo),
-            &query,
-            provider,
-            budget.unwrap_or(2000),
-            out_dir.map(|d| d.join("atlas.png")).as_deref(),
-            json,
-            ops::Representation::Auto,
-            false,
-            &theme,
-        ),
-        Cmd::Paint {
-            input,
-            provider,
             font_px,
             no_reflow,
             budget,
             query,
-            index: _,
             out_dir,
             force,
             json,

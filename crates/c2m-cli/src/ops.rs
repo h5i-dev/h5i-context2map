@@ -84,120 +84,6 @@ pub fn build(repo: Option<&Path>) -> Result<()> {
 
 // ---------------------------------------------------------------- map
 
-#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub enum Representation {
-    Auto,
-    Image,
-    Text,
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn index_atlas(
-    repo: Option<&Path>,
-    query: &str,
-    provider: Provider,
-    budget: u32,
-    out: Option<&Path>,
-    json: bool,
-    representation: Representation,
-    no_history: bool,
-    theme: &str,
-) -> Result<()> {
-    let theme = machine_theme(theme)?;
-    let ctx = open(repo)?;
-    let built = ctx.ws.build(query, ctx.now, !no_history)?;
-    print_stats(&built);
-    save_last_query(&ctx.ws, query);
-
-    let legend = build_legend(&built, query, &LegendOptions::default());
-    let legend_full = build_legend(
-        &built,
-        query,
-        &LegendOptions {
-            top_files: 8,
-            schema: true,
-        },
-    );
-    let (w, h) = provider.solve(budget, 1.0);
-    let image_tokens = provider.tokens(w, h);
-    let text_tokens = estimate_tokens(&legend_full);
-    let image_total = image_tokens + estimate_tokens(&legend);
-
-    let use_image = match representation {
-        Representation::Image => true,
-        Representation::Text => false,
-        Representation::Auto => image_total < text_tokens,
-    };
-
-    if !use_image {
-        eprintln!(
-            "· representation: text (full roster ~{text_tokens} tok ≤ atlas ~{image_total} tok)"
-        );
-        if json {
-            println!(
-                "{}",
-                serde_json::json!({
-                    "representation": "text",
-                    "legend": legend_full,
-                    "legend_tokens": text_tokens,
-                })
-            );
-        } else {
-            println!("{legend_full}");
-            println!("# {FOOTER}");
-        }
-        return Ok(());
-    }
-
-    let atlas_path = out
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| ctx.ws.dir.join("atlas.png"));
-    let legend_path = atlas_path.with_extension("legend.txt");
-    let sidecar_path = ctx.ws.dir.join("index.json");
-
-    let mut saved = SavedSites::load(&ctx.ws.layout_path());
-    let cfg = SceneConfig {
-        width: w,
-        height: h,
-        title: repo_name(&ctx.ws),
-        seed: seed_for(&repo_name(&ctx.ws)),
-        ..Default::default()
-    };
-    let s = scene::build_l1(&built, &mut saved, &cfg);
-    saved.save(&ctx.ws.layout_path())?;
-    let png = render_png(&s, theme)?;
-    std::fs::write(&atlas_path, &png).with_context(|| format!("write {atlas_path:?}"))?;
-    std::fs::write(&legend_path, &legend)?;
-    sidecar::write(&sidecar::build_sidecar(&built, query), &sidecar_path)?;
-
-    if json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "representation": "image",
-                "atlas_path": atlas_path,
-                "legend_path": legend_path,
-                "sidecar_path": sidecar_path,
-                "legend": legend,
-                "provider": provider.name(),
-                "width": w,
-                "height": h,
-                "image_tokens": image_tokens,
-                "legend_tokens": estimate_tokens(&legend),
-            })
-        );
-    } else {
-        println!("{legend}");
-        println!(
-            "# atlas: {} ({w}x{h}, ~{image_tokens} image tok on {}) — READ THIS IMAGE for the full geography",
-            atlas_path.display(),
-            provider.name()
-        );
-        println!("# {FOOTER}");
-    }
-    Ok(())
-}
-
 fn seed_for(name: &str) -> u64 {
     let mut h = 0xcbf29ce484222325u64;
     for b in name.bytes() {
@@ -238,7 +124,7 @@ pub fn zoom(
 
     let entry = registry
         .resolve(handle)
-        .with_context(|| format!("unknown handle {handle} (run `c2m paint --index` first)"))?
+        .with_context(|| format!("unknown handle {handle} (run `c2m paint <dir>` first)"))?
         .clone();
 
     match entry.kind {
@@ -843,16 +729,41 @@ fn paint_repo(
         .unwrap_or(0);
     let built = ws.build(query, now, true)?;
     print_stats(&built);
+    save_last_query(&ws, query);
     let name = repo_name(&ws);
     let dir = out_dir
         .map(Path::to_path_buf)
         .unwrap_or_else(|| ws.dir.clone());
     std::fs::create_dir_all(&dir)?;
 
+    // handles must be resolvable afterwards (zoom/read): sidecar always
+    sidecar::write(
+        &sidecar::build_sidecar(&built, query),
+        &ws.dir.join("index.json"),
+    )?;
+
+    // small budget ⇒ this IS navigation mode; if the full text roster is
+    // cheaper than any useful overview image, emit text and stop
+    let legend_full = build_legend(
+        &built,
+        query,
+        &LegendOptions {
+            top_files: 8,
+            schema: true,
+        },
+    );
+    let roster_tokens = estimate_tokens(&legend_full);
+    if roster_tokens <= 900.min(budget) {
+        eprintln!("· representation: text (full roster ~{roster_tokens} tok fits the budget best)");
+        println!("{legend_full}");
+        println!("# {FOOTER}");
+        return Ok(());
+    }
+
     // page 1: the L1 overview (index) — cheap situational awareness
     let mut pages: Vec<(PathBuf, u32, u32)> = Vec::new();
     let mut spent: u32 = 0;
-    let (ow, oh) = provider.solve(1800.min(budget / 3).max(900), 1.0);
+    let (ow, oh) = provider.solve(1800.min(budget).max(900), 1.0);
     let mut saved = SavedSites::load(&ws.layout_path());
     let cfg = SceneConfig {
         width: ow,
@@ -865,6 +776,10 @@ fn paint_repo(
     saved.save(&ws.layout_path())?;
     let overview_path = dir.join(format!("{name}-atlas.png"));
     std::fs::write(&overview_path, render_png(&overview, theme)?)?;
+    std::fs::write(
+        overview_path.with_extension("legend.txt"),
+        build_legend(&built, query, &LegendOptions::default()),
+    )?;
     spent += provider.tokens(ow, oh);
     pages.push((overview_path, ow, oh));
 
