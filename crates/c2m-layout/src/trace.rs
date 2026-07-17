@@ -1,65 +1,51 @@
-//! Shape extraction from the assignment grid: boundary tracing (Moore
-//! neighborhood), Ramer–Douglas–Peucker simplification, Chaikin smoothing,
-//! and pole-of-inaccessibility label anchors.
+//! Shape extraction from the assignment grid: mask outlines via marching
+//! squares (robust against single-pixel spurs, unlike pixel-following
+//! traces), Ramer–Douglas–Peucker simplification, Chaikin smoothing, and
+//! pole-of-inaccessibility label anchors.
 
+use crate::field::marching_squares;
 use crate::CellShape;
+
+/// RDP tolerance in *grid pixels* (converted to normalized units per call).
+const RDP_EPS_PX: f32 = 1.4;
+
+/// (polygon, centroid, anchor, anchor radius) in normalized coordinates.
+type CellParts = (Vec<(f32, f32)>, (f32, f32), (f32, f32), f32);
+
+/// Outline(s) of a mask as normalized closed polylines, longest first.
+fn mask_outlines(mask: &[bool], gw: usize, gh: usize, max_parts: usize) -> Vec<Vec<(f32, f32)>> {
+    let field: Vec<f32> = mask.iter().map(|&m| if m { 1.0 } else { 0.0 }).collect();
+    let mut chains = marching_squares(&field, gw, gh, 0.5);
+    chains.sort_by_key(|c| std::cmp::Reverse(c.len()));
+    chains.truncate(max_parts);
+    let eps = RDP_EPS_PX / gw as f32;
+    chains
+        .into_iter()
+        .map(|c| chaikin(&rdp_closed(&c, eps), 1))
+        .filter(|c| c.len() >= 3)
+        .collect()
+}
 
 /// Extract the (largest component of the) cell with the given id as a
 /// simplified, lightly smoothed polygon in normalized coordinates.
 pub fn extract_cell(assign: &[u16], gw: usize, gh: usize, id: u16) -> CellShape {
     let mask: Vec<bool> = assign.iter().map(|&a| a == id).collect();
     let (poly, centroid, anchor, anchor_radius) = extract_from_mask(&mask, gw, gh);
-    CellShape { poly, centroid, anchor, anchor_radius }
+    CellShape {
+        poly,
+        centroid,
+        anchor,
+        anchor_radius,
+    }
 }
 
 /// Outline(s) of an arbitrary mask (used for the coastline). Returns the
-/// largest components first, up to 4 parts.
+/// largest parts first, up to 4.
 pub fn extract_mask_outline(mask: &[bool], gw: usize, gh: usize) -> Vec<Vec<(f32, f32)>> {
-    let mut visited = vec![false; mask.len()];
-    let mut parts: Vec<(usize, Vec<(f32, f32)>)> = Vec::new();
-    for start in 0..mask.len() {
-        if !mask[start] || visited[start] {
-            continue;
-        }
-        // flood-fill component, remember size
-        let mut stack = vec![start];
-        let mut comp = Vec::new();
-        visited[start] = true;
-        while let Some(p) = stack.pop() {
-            comp.push(p);
-            let (x, y) = (p % gw, p / gw);
-            for (nx, ny) in neighbors4(x, y, gw, gh) {
-                let q = ny * gw + nx;
-                if mask[q] && !visited[q] {
-                    visited[q] = true;
-                    stack.push(q);
-                }
-            }
-        }
-        if comp.len() < 12 {
-            continue; // ignore specks
-        }
-        let comp_mask = {
-            let mut m = vec![false; mask.len()];
-            for &p in &comp {
-                m[p] = true;
-            }
-            m
-        };
-        let outline = trace_boundary(&comp_mask, gw, gh);
-        let simplified = rdp_closed(&outline, 1.4);
-        let smoothed = chaikin(&simplified, 1);
-        parts.push((comp.len(), normalize(&smoothed, gw, gh)));
-    }
-    parts.sort_by(|a, b| b.0.cmp(&a.0));
-    parts.into_iter().take(4).map(|(_, p)| p).collect()
+    mask_outlines(mask, gw, gh, 4)
 }
 
-fn extract_from_mask(
-    mask: &[bool],
-    gw: usize,
-    gh: usize,
-) -> (Vec<(f32, f32)>, (f32, f32), (f32, f32), f32) {
+fn extract_from_mask(mask: &[bool], gw: usize, gh: usize) -> CellParts {
     let count = mask.iter().filter(|&&m| m).count();
     if count == 0 {
         return (Vec::new(), (0.5, 0.5), (0.5, 0.5), 0.0);
@@ -103,17 +89,20 @@ fn extract_from_mask(
         cx += (p % gw) as f64 + 0.5;
         cy += (p / gw) as f64 + 0.5;
     }
-    let centroid =
-        ((cx / best.len() as f64 / gw as f64) as f32, (cy / best.len() as f64 / gh as f64) as f32);
+    let centroid = (
+        (cx / best.len() as f64 / gw as f64) as f32,
+        (cy / best.len() as f64 / gh as f64) as f32,
+    );
 
     // pole of inaccessibility: BFS distance from boundary
     let (anchor, radius_px) = pole_of_inaccessibility(&comp_mask, gw, gh);
 
-    let outline = trace_boundary(&comp_mask, gw, gh);
-    let simplified = rdp_closed(&outline, 1.4);
-    let smoothed = chaikin(&simplified, 1);
+    let poly = mask_outlines(&comp_mask, gw, gh, 1)
+        .into_iter()
+        .next()
+        .unwrap_or_default();
     (
-        normalize(&smoothed, gw, gh),
+        poly,
         centroid,
         ((anchor.0 + 0.5) / gw as f32, (anchor.1 + 0.5) / gh as f32),
         radius_px / gw as f32,
@@ -175,49 +164,6 @@ fn pole_of_inaccessibility(mask: &[bool], gw: usize, gh: usize) -> ((f32, f32), 
     }
     let (x, y) = (best.0 % gw, best.0 / gw);
     ((x as f32, y as f32), best.1 as f32)
-}
-
-/// Moore-neighborhood boundary trace (clockwise), pixel corners as vertices.
-fn trace_boundary(mask: &[bool], gw: usize, gh: usize) -> Vec<(f32, f32)> {
-    let at = |x: isize, y: isize| -> bool {
-        x >= 0 && y >= 0 && (x as usize) < gw && (y as usize) < gh && mask[y as usize * gw + x as usize]
-    };
-    // find topmost-leftmost filled pixel
-    let start = match (0..mask.len()).find(|&p| mask[p]) {
-        Some(p) => (p % gw, p / gw),
-        None => return Vec::new(),
-    };
-    let (sx, sy) = (start.0 as isize, start.1 as isize);
-
-    // Moore tracing
-    const DIRS: [(isize, isize); 8] =
-        [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)];
-    let mut path = Vec::new();
-    let (mut cx, mut cy) = (sx, sy);
-    let mut dir = 6usize; // came from below-ish; start scanning up
-    path.push((cx as f32 + 0.5, cy as f32 + 0.5));
-    let mut steps = 0usize;
-    let max_steps = gw * gh * 4;
-    loop {
-        let mut found = false;
-        for k in 0..8 {
-            let d = (dir + 5 + k) % 8; // start from backtrack+1 (clockwise)
-            let (nx, ny) = (cx + DIRS[d].0, cy + DIRS[d].1);
-            if at(nx, ny) {
-                cx = nx;
-                cy = ny;
-                dir = d;
-                path.push((cx as f32 + 0.5, cy as f32 + 0.5));
-                found = true;
-                break;
-            }
-        }
-        steps += 1;
-        if !found || (cx == sx && cy == sy && path.len() > 2) || steps > max_steps {
-            break;
-        }
-    }
-    path
 }
 
 /// RDP for a *closed* boundary: a zero-length chord (first == last point)
@@ -285,7 +231,12 @@ pub fn rdp(points: &[(f32, f32)], epsilon: f32) -> Vec<(f32, f32)> {
             stack.push((worst.0, b));
         }
     }
-    points.iter().zip(&keep).filter(|(_, &k)| k).map(|(&p, _)| p).collect()
+    points
+        .iter()
+        .zip(&keep)
+        .filter(|(_, &k)| k)
+        .map(|(&p, _)| p)
+        .collect()
 }
 
 /// Chaikin corner cutting, `rounds` iterations, treating the polygon as closed.
@@ -305,10 +256,6 @@ pub fn chaikin(points: &[(f32, f32)], rounds: usize) -> Vec<(f32, f32)> {
         pts = next;
     }
     pts
-}
-
-fn normalize(pts: &[(f32, f32)], gw: usize, gh: usize) -> Vec<(f32, f32)> {
-    pts.iter().map(|&(x, y)| (x / gw as f32, y / gh as f32)).collect()
 }
 
 #[cfg(test)]

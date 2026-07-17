@@ -44,7 +44,7 @@ pub struct CellShape {
 pub struct Layout {
     pub cells: Vec<CellShape>,
     /// Isolines between elevation bands: (level, polylines).
-    pub contours: Vec<(f32, Vec<Vec<(f32, f32)>>)>,
+    pub contours: Vec<ContourLevel>,
     /// Coastline polygons (the continent outline, possibly multiple parts).
     pub coast: Vec<Vec<(f32, f32)>>,
     /// Adjacent cell pairs (a < b).
@@ -57,10 +57,16 @@ pub struct Layout {
     pub field_h: usize,
 }
 
+/// (x, y, power weight) for one persisted site, [0,1] coordinates.
+pub type SiteRecord = (f32, f32, f32);
+
+/// One elevation level's isolines: (level, polylines in [0,1] coords).
+pub type ContourLevel = (f32, Vec<Vec<(f32, f32)>>);
+
 /// Persisted geography: territory key -> (x, y, weight) in [0,1] coords.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct SavedSites {
-    pub sites: BTreeMap<String, (f32, f32, f32)>,
+    pub sites: BTreeMap<String, SiteRecord>,
 }
 
 impl SavedSites {
@@ -94,7 +100,13 @@ pub struct LayoutOptions {
 
 impl Default for LayoutOptions {
     fn default() -> Self {
-        LayoutOptions { grid: 448, aspect: 1.0, seed: 0xC2A9, margin: 0.085, n_islands: 12 }
+        LayoutOptions {
+            grid: 448,
+            aspect: 1.0,
+            seed: 0xC2A9,
+            margin: 0.085,
+            n_islands: 12,
+        }
     }
 }
 
@@ -186,12 +198,15 @@ pub fn layout(territories: &[Territory], opts: &LayoutOptions, saved: &mut Saved
     // --- persist geography ---
     saved.sites.clear();
     for (i, t) in territories.iter().enumerate() {
-        saved.sites.insert(t.key.clone(), (sites[i].0, sites[i].1, weights[i]));
+        saved
+            .sites
+            .insert(t.key.clone(), (sites[i].0, sites[i].1, weights[i]));
     }
 
     // --- extract shapes ---
-    let cells: Vec<CellShape> =
-        (0..n).map(|i| trace::extract_cell(&assign, gw, gh, i as u16)).collect();
+    let cells: Vec<CellShape> = (0..n)
+        .map(|i| trace::extract_cell(&assign, gw, gh, i as u16))
+        .collect();
     let coast = trace::extract_mask_outline(&land, gw, gh);
     let adjacency = grid::adjacency(&assign, gw, gh, n);
 
@@ -205,7 +220,16 @@ pub fn layout(territories: &[Territory], opts: &LayoutOptions, saved: &mut Saved
 
     let islands = grid::place_islands(&land, gw, gh, opts.n_islands, opts.seed);
 
-    Layout { cells, contours, coast, adjacency, islands, elevation, field_w: fw, field_h: fh }
+    Layout {
+        cells,
+        contours,
+        coast,
+        adjacency,
+        islands,
+        elevation,
+        field_w: fw,
+        field_h: fh,
+    }
 }
 
 #[cfg(test)]
@@ -238,7 +262,10 @@ mod tests {
     #[test]
     fn deterministic() {
         let t = terr(8);
-        let opts = LayoutOptions { grid: 160, ..Default::default() };
+        let opts = LayoutOptions {
+            grid: 160,
+            ..Default::default()
+        };
         let a = layout(&t, &opts, &mut SavedSites::default());
         let b = layout(&t, &opts, &mut SavedSites::default());
         assert_eq!(a.cells.len(), b.cells.len());
@@ -250,10 +277,21 @@ mod tests {
     #[test]
     fn areas_roughly_proportional() {
         let t = vec![
-            Territory { key: "big".into(), area: 8.0, band: 3 },
-            Territory { key: "small".into(), area: 1.0, band: 2 },
+            Territory {
+                key: "big".into(),
+                area: 8.0,
+                band: 3,
+            },
+            Territory {
+                key: "small".into(),
+                area: 1.0,
+                band: 2,
+            },
         ];
-        let opts = LayoutOptions { grid: 160, ..Default::default() };
+        let opts = LayoutOptions {
+            grid: 160,
+            ..Default::default()
+        };
         let l = layout(&t, &opts, &mut SavedSites::default());
         let (a_big, a_small) = (shoelace(&l.cells[0].poly), shoelace(&l.cells[1].poly));
         assert!(
@@ -265,11 +303,18 @@ mod tests {
     #[test]
     fn stability_under_addition() {
         let mut t = terr(6);
-        let opts = LayoutOptions { grid: 160, ..Default::default() };
+        let opts = LayoutOptions {
+            grid: 160,
+            ..Default::default()
+        };
         let mut saved = SavedSites::default();
         let before = layout(&t, &opts, &mut saved);
         // add a new territory; existing anchors should not teleport
-        t.push(Territory { key: "src/newcomer".into(), area: 2.0, band: 1 });
+        t.push(Territory {
+            key: "src/newcomer".into(),
+            area: 2.0,
+            band: 1,
+        });
         let after = layout(&t, &opts, &mut saved);
         for i in 0..6 {
             let (ax, ay) = before.cells[i].anchor;
@@ -283,11 +328,17 @@ mod tests {
     fn contours_and_coast_exist() {
         let l = layout(
             &terr(5),
-            &LayoutOptions { grid: 160, ..Default::default() },
+            &LayoutOptions {
+                grid: 160,
+                ..Default::default()
+            },
             &mut SavedSites::default(),
         );
         assert!(!l.coast.is_empty(), "coastline");
-        assert!(l.contours.iter().any(|(_, lines)| !lines.is_empty()), "some contour lines");
+        assert!(
+            l.contours.iter().any(|(_, lines)| !lines.is_empty()),
+            "some contour lines"
+        );
         assert!(!l.islands.is_empty());
     }
 }

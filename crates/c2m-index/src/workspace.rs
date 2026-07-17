@@ -41,7 +41,9 @@ pub struct Built {
 
 impl Workspace {
     pub fn open(root: &Path) -> Result<Workspace> {
-        let root = root.canonicalize().with_context(|| format!("no such dir: {root:?}"))?;
+        let root = root
+            .canonicalize()
+            .with_context(|| format!("no such dir: {root:?}"))?;
         let dir = root.join(".c2m");
         std::fs::create_dir_all(&dir)?;
         // Self-ignoring cache dir: git never sees it unless the user opts in.
@@ -72,13 +74,17 @@ impl Workspace {
 
         let t1 = Instant::now();
         let mut cache = ParseCache::load(&self.cache_path());
-        let hits_before: Vec<Option<ParsedFile>> =
-            ingested.iter().map(|f| cache.get(&f.info.hash).cloned()).collect();
+        let hits_before: Vec<Option<ParsedFile>> = ingested
+            .iter()
+            .map(|f| cache.get(&f.info.hash).cloned())
+            .collect();
         let cache_hits = hits_before.iter().filter(|h| h.is_some()).count();
         let parsed: Vec<ParsedFile> = ingested
             .par_iter()
             .zip(hits_before)
-            .map(|(f, hit)| hit.unwrap_or_else(|| c2m_core::parse::parse_file(f.info.lang, &f.content)))
+            .map(|(f, hit)| {
+                hit.unwrap_or_else(|| c2m_core::parse::parse_file(f.info.lang, &f.content))
+            })
             .collect();
         for (f, p) in ingested.iter().zip(parsed.iter()) {
             if cache.get(&f.info.hash).is_none() {
@@ -129,7 +135,14 @@ impl Workspace {
             parse_ms,
             assemble_ms,
         };
-        Ok(Built { analysis, registry, file_handles, region_handles, ext_handles, stats })
+        Ok(Built {
+            analysis,
+            registry,
+            file_handles,
+            region_handles,
+            ext_handles,
+            stats,
+        })
     }
 }
 
@@ -169,7 +182,12 @@ impl Built {
                     })
                     .collect();
                 ranked.sort_by(|x, y| y.1.total_cmp(&x.1).then(x.0.cmp(&y.0)));
-                RegionSummary { band, hazards, ranked_files: ranked, out_edges: Vec::new() }
+                RegionSummary {
+                    band,
+                    hazards,
+                    ranked_files: ranked,
+                    out_edges: Vec::new(),
+                }
             })
             .collect();
         for (from, to, kind, w) in agg {
@@ -202,7 +220,11 @@ mod tests {
             "pub fn connect() -> Pool { Pool::new() }\npub struct Pool;\n",
         )
         .unwrap();
-        std::fs::write(p.join("src/main.rs"), "use crate::auth::session::Session;\nfn main() {}\n").unwrap();
+        std::fs::write(
+            p.join("src/main.rs"),
+            "use crate::auth::session::Session;\nfn main() {}\n",
+        )
+        .unwrap();
         dir
     }
 
@@ -213,14 +235,32 @@ mod tests {
         let b1 = ws.build("session expiry", 1_700_000_000, false).unwrap();
         assert_eq!(b1.stats.cache_hits, 0);
         let session_handle = {
-            let i = b1.analysis.files.iter().position(|f| f.path.ends_with("session.rs")).unwrap();
+            let i = b1
+                .analysis
+                .files
+                .iter()
+                .position(|f| f.path.ends_with("session.rs"))
+                .unwrap();
             b1.file_handles[i].clone()
         };
 
-        let b2 = ws.build("different query entirely", 1_700_000_000, false).unwrap();
-        assert_eq!(b2.stats.cache_hits, b2.stats.files, "second build should be fully cached");
-        let i = b2.analysis.files.iter().position(|f| f.path.ends_with("session.rs")).unwrap();
-        assert_eq!(b2.file_handles[i], session_handle, "handles stable across queries");
+        let b2 = ws
+            .build("different query entirely", 1_700_000_000, false)
+            .unwrap();
+        assert_eq!(
+            b2.stats.cache_hits, b2.stats.files,
+            "second build should be fully cached"
+        );
+        let i = b2
+            .analysis
+            .files
+            .iter()
+            .position(|f| f.path.ends_with("session.rs"))
+            .unwrap();
+        assert_eq!(
+            b2.file_handles[i], session_handle,
+            "handles stable across queries"
+        );
     }
 
     #[test]
@@ -230,9 +270,20 @@ mod tests {
         let b = ws.build("session expiry", 1_700_000_000, false).unwrap();
         let sums = b.region_summaries();
         assert_eq!(sums.len(), b.analysis.tree.regions.len());
-        let auth_idx =
-            b.analysis.tree.regions.iter().position(|r| r.path.contains("auth")).unwrap();
-        assert!(sums[auth_idx].band >= 4, "queried region should be high elevation");
-        assert!(sums.iter().any(|s| !s.out_edges.is_empty()), "imports should aggregate");
+        let auth_idx = b
+            .analysis
+            .tree
+            .regions
+            .iter()
+            .position(|r| r.path.contains("auth"))
+            .unwrap();
+        assert!(
+            sums[auth_idx].band >= 4,
+            "queried region should be high elevation"
+        );
+        assert!(
+            sums.iter().any(|s| !s.out_edges.is_empty()),
+            "imports should aggregate"
+        );
     }
 }

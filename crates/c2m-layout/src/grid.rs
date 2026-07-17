@@ -101,12 +101,7 @@ pub fn cell_areas(assign: &[u16], n: usize) -> Vec<u32> {
     areas
 }
 
-pub fn cell_centroids(
-    assign: &[u16],
-    gw: usize,
-    gh: usize,
-    n: usize,
-) -> Vec<Option<(f32, f32)>> {
+pub fn cell_centroids(assign: &[u16], gw: usize, gh: usize, n: usize) -> Vec<Option<(f32, f32)>> {
     let mut sum = vec![(0f64, 0f64, 0u64); n];
     for y in 0..gh {
         for x in 0..gw {
@@ -123,7 +118,10 @@ pub fn cell_centroids(
             if c == 0 {
                 None
             } else {
-                Some(((sx / c as f64 / gw as f64) as f32, (sy / c as f64 / gh as f64) as f32))
+                Some((
+                    (sx / c as f64 / gw as f64) as f32,
+                    (sy / c as f64 / gh as f64) as f32,
+                ))
             }
         })
         .collect()
@@ -132,14 +130,21 @@ pub fn cell_centroids(
 /// Deterministically pick a pixel inside cell `id` (used to rescue
 /// vanished cells). `salt` varies the choice between attempts.
 pub fn pick_pixel_in_cell(assign: &[u16], gw: usize, id: u16, salt: u64) -> Option<(f32, f32)> {
-    let members: Vec<usize> =
-        assign.iter().enumerate().filter(|(_, &a)| a == id).map(|(i, _)| i).collect();
+    let members: Vec<usize> = assign
+        .iter()
+        .enumerate()
+        .filter(|(_, &a)| a == id)
+        .map(|(i, _)| i)
+        .collect();
     if members.is_empty() {
         return None;
     }
     let pick = members[(salt as usize) % members.len()];
     let gh = assign.len() / gw;
-    Some((((pick % gw) as f32 + 0.5) / gw as f32, ((pick / gw) as f32 + 0.5) / gh as f32))
+    Some((
+        ((pick % gw) as f32 + 0.5) / gw as f32,
+        ((pick / gw) as f32 + 0.5) / gh as f32,
+    ))
 }
 
 /// Neighboring cell pairs (a < b), from 4-connected grid transitions.

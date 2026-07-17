@@ -125,12 +125,15 @@ pub fn marching_squares(field: &[f32], w: usize, h: usize, level: f32) -> Vec<Ve
         }
     }
 
-    // stitch segments into chains (greedy, quantized endpoints)
+    // stitch segments into chains — orientation-agnostic: a segment can be
+    // consumed from either endpoint (marching-squares emission order is not
+    // consistent around a contour, especially on binary masks)
     let key = |p: (f32, f32)| ((p.0 * 8.0).round() as i64, (p.1 * 8.0).round() as i64);
-    let mut by_start: std::collections::HashMap<(i64, i64), Vec<usize>> =
+    let mut by_end: std::collections::HashMap<(i64, i64), Vec<usize>> =
         std::collections::HashMap::new();
-    for (i, &(a, _)) in segments.iter().enumerate() {
-        by_start.entry(key(a)).or_default().push(i);
+    for (i, &(a, b)) in segments.iter().enumerate() {
+        by_end.entry(key(a)).or_default().push(i);
+        by_end.entry(key(b)).or_default().push(i);
     }
     let mut used = vec![false; segments.len()];
     let mut chains = Vec::new();
@@ -141,23 +144,36 @@ pub fn marching_squares(field: &[f32], w: usize, h: usize, level: f32) -> Vec<Ve
         used[i] = true;
         let (a, b) = segments[i];
         let mut chain = vec![a, b];
-        // extend forward
+        // grow at the tail, flipping segments as needed
         loop {
-            let k = key(*chain.last().unwrap());
-            let next = by_start
+            let tail = *chain.last().unwrap();
+            let k = key(tail);
+            let next = by_end
                 .get(&k)
                 .and_then(|cands| cands.iter().find(|&&j| !used[j]).copied());
-            match next {
-                Some(j) => {
-                    used[j] = true;
-                    chain.push(segments[j].1);
-                }
-                None => break,
-            }
+            let Some(j) = next else { break };
+            used[j] = true;
+            let (sa, sb) = segments[j];
+            chain.push(if key(sa) == k { sb } else { sa });
+        }
+        // grow at the head the same way
+        loop {
+            let head = chain[0];
+            let k = key(head);
+            let next = by_end
+                .get(&k)
+                .and_then(|cands| cands.iter().find(|&&j| !used[j]).copied());
+            let Some(j) = next else { break };
+            used[j] = true;
+            let (sa, sb) = segments[j];
+            chain.insert(0, if key(sa) == k { sb } else { sa });
         }
         if chain.len() >= 4 {
             chains.push(
-                chain.into_iter().map(|(x, y)| (x / w as f32, y / h as f32)).collect::<Vec<_>>(),
+                chain
+                    .into_iter()
+                    .map(|(x, y)| (x / w as f32, y / h as f32))
+                    .collect::<Vec<_>>(),
             );
         }
     }
@@ -174,13 +190,16 @@ mod tests {
         let mut field = vec![0f32; w * h];
         for y in 0..h {
             for x in 0..w {
-                let d = (((x as f32 - 16.0).powi(2) + (y as f32 - 16.0).powi(2)) as f32).sqrt();
+                let d = ((x as f32 - 16.0).powi(2) + (y as f32 - 16.0).powi(2)).sqrt();
                 field[y * w + x] = (10.0 - d).max(0.0);
             }
         }
         let lines = marching_squares(&field, w, h, 5.0);
         assert!(!lines.is_empty());
         let total_pts: usize = lines.iter().map(|c| c.len()).sum();
-        assert!(total_pts > 12, "should trace a ring, got {total_pts} points");
+        assert!(
+            total_pts > 12,
+            "should trace a ring, got {total_pts} points"
+        );
     }
 }

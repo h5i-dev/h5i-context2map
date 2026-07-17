@@ -8,7 +8,11 @@ pub const DANGEROUS_EVAL: u8 = 1 << 3;
 
 pub fn scan(content: &str) -> u8 {
     let mut flags = 0u8;
-    let lower = if content.len() <= 512 * 1024 { content } else { &content[..512 * 1024] };
+    let lower = if content.len() <= 512 * 1024 {
+        content
+    } else {
+        &content[..512 * 1024]
+    };
     for line in lower.lines() {
         let l = line.trim_start();
         if l.starts_with("//") || l.starts_with('#') || l.starts_with('*') {
@@ -51,25 +55,66 @@ pub fn tags(flags: u8) -> Vec<&'static str> {
 }
 
 const NETWORK_PATTERNS: &[&str] = &[
-    "reqwest::", "hyper::", "TcpListener", "TcpStream", "UdpSocket", "requests.get",
-    "requests.post", "urllib.request", "http.client", "aiohttp", "fetch(", "axios",
-    "XMLHttpRequest", "http.Get(", "http.Post(", "net.Listen", "HttpClient", "HttpURLConnection",
-    "socket.socket", "websocket",
+    "reqwest::",
+    "hyper::",
+    "TcpListener",
+    "TcpStream",
+    "UdpSocket",
+    "requests.get",
+    "requests.post",
+    "urllib.request",
+    "http.client",
+    "aiohttp",
+    "fetch(",
+    "axios",
+    "XMLHttpRequest",
+    "http.Get(",
+    "http.Post(",
+    "net.Listen",
+    "HttpClient",
+    "HttpURLConnection",
+    "socket.socket",
+    "websocket",
 ];
 
 const SUBPROCESS_PATTERNS: &[&str] = &[
-    "Command::new", "subprocess.", "os.system", "child_process", "execSync", "spawnSync",
-    "exec.Command", "Runtime.getRuntime().exec", "ProcessBuilder", "popen",
+    "Command::new",
+    "subprocess.",
+    "os.system",
+    "child_process",
+    "execSync",
+    "spawnSync",
+    "exec.Command",
+    "Runtime.getRuntime().exec",
+    "ProcessBuilder",
+    "popen",
 ];
 
 const SECRET_PATTERNS: &[&str] = &[
-    "API_KEY", "SECRET", "PASSWORD", "PRIVATE_KEY", "ACCESS_TOKEN", "api_key", "client_secret",
-    "env::var", "os.environ", "getenv", "process.env", "os.Getenv", "credentials",
+    "API_KEY",
+    "SECRET",
+    "PASSWORD",
+    "PRIVATE_KEY",
+    "ACCESS_TOKEN",
+    "api_key",
+    "client_secret",
+    "env::var",
+    "os.environ",
+    "getenv",
+    "process.env",
+    "os.Getenv",
+    "credentials",
 ];
 
 const EVAL_PATTERNS: &[&str] = &[
-    "pickle.load", "yaml.load(", "eval(", "exec(", "deserialize_untrusted", "vm.runInContext",
-    "Function(", "unsafe {",
+    "pickle.load",
+    "yaml.load(",
+    "eval(",
+    "exec(",
+    "deserialize_untrusted",
+    "vm.runInContext",
+    "Function(",
+    "unsafe {",
 ];
 
 #[cfg(test)]

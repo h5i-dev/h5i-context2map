@@ -88,11 +88,13 @@ fn extract_ts(spec: LangSpec, content: &str, out: &mut ParsedFile) {
     let tree = PARSERS.with(|cell| {
         let mut parsers = cell.borrow_mut();
         // Language has no Hash; key parsers by the query's address (one per lang).
-        let parser = parsers.entry(query as *const Query as usize).or_insert_with(|| {
-            let mut p = Parser::new();
-            let _ = p.set_language(&spec.language);
-            p
-        });
+        let parser = parsers
+            .entry(query as *const Query as usize)
+            .or_insert_with(|| {
+                let mut p = Parser::new();
+                let _ = p.set_language(&spec.language);
+                p
+            });
         parser.parse(content, None)
     });
     let tree = match tree {
@@ -213,7 +215,14 @@ mod tests {
     /// Guard against grammar-version drift: every query must compile.
     #[test]
     fn all_queries_compile() {
-        for lang in [Lang::Rust, Lang::Python, Lang::JavaScript, Lang::TypeScript, Lang::Go, Lang::Java] {
+        for lang in [
+            Lang::Rust,
+            Lang::Python,
+            Lang::JavaScript,
+            Lang::TypeScript,
+            Lang::Go,
+            Lang::Java,
+        ] {
             let spec = lang_spec(lang).unwrap();
             Query::new(&spec.language, spec.query_src)
                 .unwrap_or_else(|e| panic!("{lang:?} query failed: {e}"));
@@ -224,8 +233,11 @@ mod tests {
     fn rust_symbols_and_imports() {
         let src = "use crate::auth::session;\npub fn check_expiry(s: &Session) -> bool { true }\npub struct Session { id: u64 }\n";
         let p = parse_file(Lang::Rust, src);
-        let names: Vec<(&str, SymbolKind)> =
-            p.symbols.iter().map(|s| (s.name.as_str(), s.kind)).collect();
+        let names: Vec<(&str, SymbolKind)> = p
+            .symbols
+            .iter()
+            .map(|s| (s.name.as_str(), s.kind))
+            .collect();
         assert!(names.contains(&("check_expiry", SymbolKind::Function)));
         assert!(names.contains(&("Session", SymbolKind::Struct)));
         assert_eq!(p.imports, vec!["use crate::auth::session"]);
@@ -235,7 +247,10 @@ mod tests {
     fn python_symbols() {
         let src = "import os\nfrom auth.session import Session\n\nclass Manager:\n    def expire(self):\n        pass\n";
         let p = parse_file(Lang::Python, src);
-        assert!(p.symbols.iter().any(|s| s.name == "Manager" && s.kind == SymbolKind::Class));
+        assert!(p
+            .symbols
+            .iter()
+            .any(|s| s.name == "Manager" && s.kind == SymbolKind::Class));
         assert!(p.symbols.iter().any(|s| s.name == "expire"));
         assert_eq!(p.imports.len(), 2);
     }
@@ -244,9 +259,18 @@ mod tests {
     fn typescript_symbols() {
         let src = "import { x } from './util';\nexport interface Session { id: string }\nexport const check = (s: Session) => s.id !== '';\nclass Store { get(k: string) { return k; } }\n";
         let p = parse_file(Lang::TypeScript, src);
-        assert!(p.symbols.iter().any(|s| s.name == "Session" && s.kind == SymbolKind::Interface));
-        assert!(p.symbols.iter().any(|s| s.name == "check" && s.kind == SymbolKind::Function));
-        assert!(p.symbols.iter().any(|s| s.name == "get" && s.kind == SymbolKind::Method));
+        assert!(p
+            .symbols
+            .iter()
+            .any(|s| s.name == "Session" && s.kind == SymbolKind::Interface));
+        assert!(p
+            .symbols
+            .iter()
+            .any(|s| s.name == "check" && s.kind == SymbolKind::Function));
+        assert!(p
+            .symbols
+            .iter()
+            .any(|s| s.name == "get" && s.kind == SymbolKind::Method));
         assert_eq!(p.imports.len(), 1);
     }
 }

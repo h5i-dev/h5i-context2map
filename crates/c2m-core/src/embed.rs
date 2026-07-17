@@ -35,7 +35,11 @@ pub fn embed_all(parsed: &[ParsedFile], paths: &[String]) -> Embeddings {
             vectorize(pf.idents.iter().chain(path_toks.iter()), &df, n_docs)
         })
         .collect();
-    Embeddings { vectors, df, n_docs }
+    Embeddings {
+        vectors,
+        df,
+        n_docs,
+    }
 }
 
 impl Embeddings {
@@ -92,12 +96,25 @@ mod tests {
 
     #[test]
     fn related_files_are_closer() {
-        let a = parse_file(Lang::Rust, "fn session_expiry(session: Session) -> Expiry { session.expire_at() }");
-        let b = parse_file(Lang::Rust, "fn session_check(session: &Session) { validate_session_expiry(session) }");
-        let c = parse_file(Lang::Rust, "fn render_button(color: Color) -> Widget { draw_rect(color) }");
+        let a = parse_file(
+            Lang::Rust,
+            "fn session_expiry(session: Session) -> Expiry { session.expire_at() }",
+        );
+        let b = parse_file(
+            Lang::Rust,
+            "fn session_check(session: &Session) { validate_session_expiry(session) }",
+        );
+        let c = parse_file(
+            Lang::Rust,
+            "fn render_button(color: Color) -> Widget { draw_rect(color) }",
+        );
         let e = embed_all(
             &[a, b, c],
-            &["auth/expiry.rs".into(), "auth/check.rs".into(), "ui/button.rs".into()],
+            &[
+                "auth/expiry.rs".into(),
+                "auth/check.rs".into(),
+                "ui/button.rs".into(),
+            ],
         );
         let q = e.embed_query(&["session".into(), "expiry".into()]);
         assert!(e.cosine(&q, 0) > e.cosine(&q, 2));

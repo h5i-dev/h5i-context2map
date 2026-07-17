@@ -14,7 +14,10 @@ pub struct LegendOptions {
 
 impl Default for LegendOptions {
     fn default() -> Self {
-        LegendOptions { top_files: 3, schema: true }
+        LegendOptions {
+            top_files: 3,
+            schema: true,
+        }
     }
 }
 
@@ -27,7 +30,9 @@ pub fn build_legend(built: &Built, query: &str, opts: &LegendOptions) -> String 
         out.push_str("# ATLAS v1 · map legend\n");
         out.push_str("# elevation ▲1..▲5 = relevance (▲5 = summit, look here first) · cell area = code size\n");
         out.push_str("# ⚠tags = trust hazards (net/exec/secrets/eval) · →R… = depends on region\n");
-        out.push_str("# handles: R=region F=file X=external-dep · never guess content — zoom in:\n");
+        out.push_str(
+            "# handles: R=region F=file X=external-dep · never guess content — zoom in:\n",
+        );
         out.push_str("#   `c2m zoom R3` region detail · `c2m read F103` exact source · `c2m locate <pat>` search\n");
     }
     if !query.is_empty() {
@@ -84,15 +89,27 @@ fn region_line(
     if !tags.is_empty() {
         line.push_str(&format!(" ⚠{}", tags.join(",")));
     }
-    line.push_str(&format!(" {}f {} {}", r.files.len(), human_loc(r.loc), r.dominant_lang.tag()));
+    line.push_str(&format!(
+        " {}f {} {}",
+        r.files.len(),
+        human_loc(r.loc),
+        r.dominant_lang.tag()
+    ));
 
     let tops: Vec<String> = s
         .ranked_files
         .iter()
         .take(top_files)
         .map(|&(i, _)| {
-            let name = a.files[i].path.rsplit('/').next().unwrap_or(&a.files[i].path);
-            format!("{} {}▲{}", built.file_handles[i], name, a.relevance.bands[i])
+            let name = a.files[i]
+                .path
+                .rsplit('/')
+                .next()
+                .unwrap_or(&a.files[i].path);
+            format!(
+                "{} {}▲{}",
+                built.file_handles[i], name, a.relevance.bands[i]
+            )
         })
         .collect();
     if !tops.is_empty() {
@@ -147,6 +164,9 @@ mod tests {
         assert!(legend.contains("▲"), "bands present");
         assert!(legend.contains("session.rs"), "top files listed");
         assert!(legend.contains("c2m zoom"), "affordances stated");
-        assert!(legend.lines().any(|l| l.starts_with('R')), "region handles present");
+        assert!(
+            legend.lines().any(|l| l.starts_with('R')),
+            "region handles present"
+        );
     }
 }

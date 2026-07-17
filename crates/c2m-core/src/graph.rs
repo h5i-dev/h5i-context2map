@@ -41,8 +41,11 @@ const REF_TOP_PER_FILE: usize = 30;
 pub fn build(files: &[FileInfo], parsed: &[ParsedFile], history: &History) -> FileGraph {
     let mut g = FileGraph::default();
     let resolver = ImportResolver::new(files);
-    let path_to_id: HashMap<&str, FileId> =
-        files.iter().enumerate().map(|(i, f)| (f.path.as_str(), FileId(i as u32))).collect();
+    let path_to_id: HashMap<&str, FileId> = files
+        .iter()
+        .enumerate()
+        .map(|(i, f)| (f.path.as_str(), FileId(i as u32)))
+        .collect();
 
     // --- import edges + external deps ---
     let mut external: HashMap<String, u32> = HashMap::new();
@@ -51,11 +54,14 @@ pub fn build(files: &[FileInfo], parsed: &[ParsedFile], history: &History) -> Fi
         let mut seen: Vec<FileId> = Vec::new();
         for imp in &pf.imports {
             match resolver.resolve(&files[i].path, imp) {
-                Resolution::Internal(target) if target != from => {
-                    if !seen.contains(&target) {
-                        seen.push(target);
-                        g.edges.push(Edge { from, to: target, kind: EdgeKind::Import, weight: 1.0 });
-                    }
+                Resolution::Internal(target) if target != from && !seen.contains(&target) => {
+                    seen.push(target);
+                    g.edges.push(Edge {
+                        from,
+                        to: target,
+                        kind: EdgeKind::Import,
+                        weight: 1.0,
+                    });
                 }
                 Resolution::External(name) => *external.entry(name).or_insert(0) += 1,
                 _ => {}
@@ -85,7 +91,11 @@ pub fn build(files: &[FileInfo], parsed: &[ParsedFile], history: &History) -> Fi
                 continue;
             }
             if let Some(defs) = defs_by_name.get(tok) {
-                let mult = if defs.len() > REF_COMMON_DEF_LIMIT { 0.1 } else { 1.0 };
+                let mult = if defs.len() > REF_COMMON_DEF_LIMIT {
+                    0.1
+                } else {
+                    1.0
+                };
                 let w = (*count as f32).sqrt() * mult / defs.len() as f32;
                 for &d in defs {
                     if d != from {
@@ -95,7 +105,7 @@ pub fn build(files: &[FileInfo], parsed: &[ParsedFile], history: &History) -> Fi
             }
         }
         // merge duplicate targets, keep the strongest few
-        cands.sort_by(|a, b| a.0.cmp(&b.0));
+        cands.sort_by_key(|c| c.0);
         let mut merged: Vec<(FileId, f32)> = Vec::new();
         for (id, w) in cands {
             match merged.last_mut() {
@@ -105,7 +115,12 @@ pub fn build(files: &[FileInfo], parsed: &[ParsedFile], history: &History) -> Fi
         }
         merged.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
         for (to, weight) in merged.into_iter().take(REF_TOP_PER_FILE) {
-            g.edges.push(Edge { from, to, kind: EdgeKind::Reference, weight });
+            g.edges.push(Edge {
+                from,
+                to,
+                kind: EdgeKind::Reference,
+                weight,
+            });
         }
     }
 
@@ -118,8 +133,18 @@ pub fn build(files: &[FileInfo], parsed: &[ParsedFile], history: &History) -> Fi
         }
         if let (Some(&ia), Some(&ib)) = (path_to_id.get(a.as_str()), path_to_id.get(b.as_str())) {
             let w = (n as f32).sqrt() * 0.5;
-            g.edges.push(Edge { from: ia, to: ib, kind: EdgeKind::CoChange, weight: w });
-            g.edges.push(Edge { from: ib, to: ia, kind: EdgeKind::CoChange, weight: w });
+            g.edges.push(Edge {
+                from: ia,
+                to: ib,
+                kind: EdgeKind::CoChange,
+                weight: w,
+            });
+            g.edges.push(Edge {
+                from: ib,
+                to: ia,
+                kind: EdgeKind::CoChange,
+                weight: w,
+            });
         }
     }
 
@@ -258,18 +283,29 @@ impl ImportResolver {
             let id = FileId(i as u32);
             exact_paths.insert(f.path.clone(), id);
             let noext = f.path.rsplit_once('.').map(|(a, _)| a).unwrap_or(&f.path);
-            let segs: Vec<String> = noext.split('/').map(|s| s.to_ascii_lowercase()).collect();
+            // normalize - vs _ so `use c2m_layout::…` matches dir `c2m-layout`
+            let segs: Vec<String> = noext
+                .split('/')
+                .map(|s| s.to_ascii_lowercase().replace('-', "_"))
+                .collect();
             if let Some(stem) = segs.last() {
                 // `mod.rs`, `__init__.py`, `index.ts` resolve to their directory name
                 let key = if stem == "mod" || stem == "__init__" || stem == "index" {
-                    segs.iter().rev().nth(1).cloned().unwrap_or_else(|| stem.clone())
+                    segs.iter()
+                        .rev()
+                        .nth(1)
+                        .cloned()
+                        .unwrap_or_else(|| stem.clone())
                 } else {
                     stem.clone()
                 };
                 stem_index.entry(key).or_default().push((id, segs));
             }
         }
-        ImportResolver { stem_index, exact_paths }
+        ImportResolver {
+            stem_index,
+            exact_paths,
+        }
     }
 
     fn resolve(&self, from_path: &str, import: &str) -> Resolution {
@@ -316,9 +352,13 @@ impl ImportResolver {
             return Resolution::Internal(id);
         }
 
-        // 3) unresolved: first segment is likely an external package name
+        // 3) unresolved: first segment is likely an external package name —
+        // unless it's a type name (capitalized in source) or a language builtin
         let first = segs[0].clone();
-        if first.len() >= 2 && !matches!(first.as_str(), "crate" | "self" | "super") {
+        let capitalized = import.split([':', '.', ' ', '{', ',']).any(|t| {
+            t.trim().to_ascii_lowercase() == first && t.trim().starts_with(char::is_uppercase)
+        });
+        if first.len() >= 2 && !capitalized && !BUILTIN_MODULES.contains(&first.as_str()) {
             Resolution::External(first)
         } else {
             Resolution::Unknown
@@ -342,8 +382,19 @@ impl ImportResolver {
         }
         let base = parts.join("/");
         const EXTS: &[&str] = &[
-            "", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".py", ".rs", "/index.ts", "/index.tsx",
-            "/index.js", "/mod.rs", "/__init__.py",
+            "",
+            ".ts",
+            ".tsx",
+            ".js",
+            ".jsx",
+            ".mjs",
+            ".py",
+            ".rs",
+            "/index.ts",
+            "/index.tsx",
+            "/index.js",
+            "/mod.rs",
+            "/__init__.py",
         ];
         for ext in EXTS {
             if let Some(&id) = self.exact_paths.get(&format!("{base}{ext}")) {
@@ -353,6 +404,51 @@ impl ImportResolver {
         None
     }
 }
+
+/// Standard-library roots across supported languages: real imports, but
+/// noise as "external dependency" islands.
+const BUILTIN_MODULES: &[&str] = &[
+    // rust
+    "std",
+    "core",
+    "alloc",
+    // python
+    "os",
+    "sys",
+    "typing",
+    "collections",
+    "json",
+    "re",
+    "math",
+    "time",
+    "pathlib",
+    "dataclasses",
+    "functools",
+    "itertools",
+    "abc",
+    "enum",
+    "logging",
+    "unittest",
+    "asyncio",
+    // go
+    "fmt",
+    "errors",
+    "strings",
+    "strconv",
+    "context",
+    "bytes",
+    "bufio",
+    "sort",
+    // node
+    "fs",
+    "path",
+    "util",
+    "events",
+    "url",
+    // java
+    "java",
+    "javax",
+];
 
 /// Extract a `./x/y`-style relative specifier from an import line, if any.
 fn relative_target(import: &str) -> Option<String> {
@@ -371,8 +467,9 @@ fn relative_target(import: &str) -> Option<String> {
 /// Path-ish lowercase segments from an import statement, stopwords removed
 /// (`use`, `import`, `from`, `as`, …) but order preserved.
 fn import_segments(import: &str) -> Vec<String> {
-    const IMPORT_NOISE: &[&str] =
-        &["use", "import", "from", "as", "pub", "static", "type", "crate", "self", "super"];
+    const IMPORT_NOISE: &[&str] = &[
+        "use", "import", "from", "as", "pub", "static", "type", "crate", "self", "super",
+    ];
     let mut out = Vec::new();
     for raw in tokens::raw_idents(import) {
         let t = raw.to_ascii_lowercase();
@@ -404,8 +501,12 @@ mod tests {
 
     #[test]
     fn resolves_rust_use_and_python_from() {
-        let files =
-            vec![fi("src/auth/session.rs"), fi("src/main.rs"), fi("lib/db.py"), fi("app.py")];
+        let files = vec![
+            fi("src/auth/session.rs"),
+            fi("src/main.rs"),
+            fi("lib/db.py"),
+            fi("app.py"),
+        ];
         let r = ImportResolver::new(&files);
         match r.resolve("src/main.rs", "use crate::auth::session::Session") {
             Resolution::Internal(id) => assert_eq!(id, FileId(0)),
@@ -434,8 +535,18 @@ mod tests {
     #[test]
     fn pagerank_prefers_referenced() {
         let edges = vec![
-            Edge { from: FileId(1), to: FileId(0), kind: EdgeKind::Import, weight: 1.0 },
-            Edge { from: FileId(2), to: FileId(0), kind: EdgeKind::Import, weight: 1.0 },
+            Edge {
+                from: FileId(1),
+                to: FileId(0),
+                kind: EdgeKind::Import,
+                weight: 1.0,
+            },
+            Edge {
+                from: FileId(2),
+                to: FileId(0),
+                kind: EdgeKind::Import,
+                weight: 1.0,
+            },
         ];
         let pr = page_rank(3, &edges, None);
         assert!(pr[0] > pr[1]);

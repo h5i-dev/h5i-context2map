@@ -27,7 +27,14 @@ pub fn collect(root: &Path, now_epoch: u64) -> History {
     let out = Command::new("git")
         .arg("-C")
         .arg(root)
-        .args(["log", "--no-renames", "--name-only", "-n", MAX_COMMITS, "--pretty=format:@%ct"])
+        .args([
+            "log",
+            "--no-renames",
+            "--name-only",
+            "-n",
+            MAX_COMMITS,
+            "--pretty=format:@%ct",
+        ])
         .output();
     let out = match out {
         Ok(o) if o.status.success() => o,

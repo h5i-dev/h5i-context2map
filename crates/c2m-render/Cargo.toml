@@ -8,6 +8,11 @@ repository.workspace = true
 [dependencies]
 c2m-core.workspace = true
 c2m-layout.workspace = true
+c2m-index.workspace = true
 anyhow.workspace = true
 tiny-skia.workspace = true
 fontdue.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+c2m-index.workspace = true

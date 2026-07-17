@@ -123,7 +123,13 @@ impl HandleRegistry {
         handle
     }
 
-    pub fn assign_symbol(&mut self, path: &str, name: &str, kind_tag: &str, lines: (u32, u32)) -> String {
+    pub fn assign_symbol(
+        &mut self,
+        path: &str,
+        name: &str,
+        kind_tag: &str,
+        lines: (u32, u32),
+    ) -> String {
         let key = format!("{path}#{name}#{kind_tag}");
         let h = self.assign(Kind::Symbol, &key, "");
         if let Some(e) = self.entries.get_mut(&Self::key_for(Kind::Symbol, &key)) {

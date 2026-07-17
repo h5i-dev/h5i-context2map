@@ -208,8 +208,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "c2m-core",
+ "c2m-index",
  "c2m-layout",
  "fontdue",
+ "tempfile",
  "tiny-skia",
 ]
 

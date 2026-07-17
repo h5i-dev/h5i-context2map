@@ -49,13 +49,20 @@ pub fn score(
     if n == 0 || terms.is_empty() {
         // No query: elevation = global importance.
         let bands = quantize(importance);
-        return Relevance { scores: importance.to_vec(), bands, seeds: Vec::new(), terms };
+        return Relevance {
+            scores: importance.to_vec(),
+            bands,
+            seeds: Vec::new(),
+            terms,
+        };
     }
 
     // --- component scores ---
     let lexical = bm25(&terms, parsed);
     let qvec = embeddings.embed_query(&terms);
-    let semantic: Vec<f32> = (0..n).map(|i| embeddings.cosine(&qvec, i).max(0.0)).collect();
+    let semantic: Vec<f32> = (0..n)
+        .map(|i| embeddings.cosine(&qvec, i).max(0.0))
+        .collect();
     let path_bonus: Vec<f32> = files
         .iter()
         .map(|f| {
@@ -68,14 +75,31 @@ pub fn score(
     // --- seeds: best lexical+semantic combined ---
     let lex_n = rank_normalize(&lexical);
     let sem_n = rank_normalize(&semantic);
+    // Raw-signal seed scores (not rank-normalized): rank normalization would
+    // let pure noise qualify as a seed on repos where few files truly match.
+    let lex_max = lexical.iter().copied().fold(0f32, f32::max);
+    let sem_max = semantic.iter().copied().fold(0f32, f32::max);
     let mut seed_rank: Vec<(usize, f32)> = (0..n)
-        .map(|i| (i, lex_n[i] + sem_n[i] + path_bonus[i]))
-        .filter(|(_, s)| *s > 0.0)
+        .map(|i| {
+            let lex = if lex_max > 0.0 {
+                lexical[i] / lex_max
+            } else {
+                0.0
+            };
+            let sem = if sem_max > 0.0 {
+                semantic[i] / sem_max
+            } else {
+                0.0
+            };
+            (i, lex + 0.6 * sem + path_bonus[i])
+        })
         .collect();
     seed_rank.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    let top_seed = seed_rank.first().map(|&(_, s)| s).unwrap_or(0.0);
     let seeds: Vec<(FileId, f32)> = seed_rank
         .iter()
         .take(SEED_COUNT)
+        .filter(|&&(_, s)| s > 0.0 && s >= top_seed * 0.30)
         .map(|&(i, s)| (FileId(i as u32), s))
         .collect();
 
@@ -85,8 +109,10 @@ pub fn score(
         graph::page_rank(n, edges, Some(&seeds))
     };
 
-    let churn: Vec<f32> =
-        files.iter().map(|f| history.churn.get(&f.path).copied().unwrap_or(0.0)).collect();
+    let churn: Vec<f32> = files
+        .iter()
+        .map(|f| history.churn.get(&f.path).copied().unwrap_or(0.0))
+        .collect();
 
     // --- fuse (rank-normalized so no component dominates by scale) ---
     let dif_n = rank_normalize(&diffusion);
@@ -102,7 +128,12 @@ pub fn score(
         .collect();
 
     let bands = quantize(&scores);
-    Relevance { scores, bands, seeds: seeds.into_iter().map(|(id, _)| id).collect(), terms }
+    Relevance {
+        scores,
+        bands,
+        seeds: seeds.into_iter().map(|(id, _)| id).collect(),
+        terms,
+    }
 }
 
 fn bm25(terms: &[String], parsed: &[ParsedFile]) -> Vec<f32> {
@@ -154,21 +185,33 @@ fn rank_normalize(scores: &[f32]) -> Vec<f32> {
     let mut out = vec![0f32; n];
     let denom = (n.max(2) - 1) as f32;
     for (rank, &i) in idx.iter().enumerate() {
-        out[i] = if scores[i] <= 0.0 { 0.0 } else { rank as f32 / denom };
+        out[i] = if scores[i] <= 0.0 {
+            0.0
+        } else {
+            rank as f32 / denom
+        };
     }
     out
 }
 
-/// Quantile-based banding so every map has contrast regardless of the
-/// absolute score distribution.
+/// Quantile-based banding for contrast — but only *within the files that
+/// carry real signal*. Files at ≤2% of the max score stay at band 1, so a
+/// concentrated query on a huge repo yields one summit, not a uniformly
+/// "hot" map (quantiles over everything would force half the repo high).
 fn quantize(scores: &[f32]) -> Vec<u8> {
     let n = scores.len();
     if n == 0 {
         return Vec::new();
     }
-    let mut sorted: Vec<f32> = scores.to_vec();
-    sorted.sort_by(f32::total_cmp);
-    let cut = |q: f32| -> f32 { sorted[((n - 1) as f32 * q) as usize] };
+    let max = scores.iter().copied().fold(0f32, f32::max);
+    if max <= 0.0 {
+        return vec![1; n];
+    }
+    let floor = max * 0.02;
+    let mut positive: Vec<f32> = scores.iter().copied().filter(|&s| s > floor).collect();
+    positive.sort_by(f32::total_cmp);
+    let m = positive.len().max(1);
+    let cut = |q: f32| -> f32 { positive[((m - 1) as f32 * q) as usize] };
     let cuts = [
         cut(BAND_QUANTILES[0]),
         cut(BAND_QUANTILES[1]),
@@ -178,8 +221,11 @@ fn quantize(scores: &[f32]) -> Vec<u8> {
     scores
         .iter()
         .map(|&s| {
-            let mut band = 1u8;
-            for (i, &c) in cuts.iter().enumerate() {
+            if s <= floor {
+                return 1u8;
+            }
+            let mut band = 2u8;
+            for (i, &c) in cuts.iter().enumerate().skip(1) {
                 if s > c {
                     band = i as u8 + 2;
                 }
@@ -198,10 +244,22 @@ mod tests {
     #[test]
     fn query_elevates_matching_and_connected_files() {
         let srcs = [
-            ("auth/session.rs", "pub struct Session; pub fn session_expiry(s: &Session) -> u64 { s.expires }"),
-            ("auth/middleware.rs", "use crate::auth::session::Session; fn guard(s: Session) { session_expiry(&s); }"),
-            ("ui/button.rs", "fn draw_button(w: Widget) { w.paint_rect(); }"),
-            ("ui/panel.rs", "fn draw_panel(w: Widget) { w.paint_grid(); }"),
+            (
+                "auth/session.rs",
+                "pub struct Session; pub fn session_expiry(s: &Session) -> u64 { s.expires }",
+            ),
+            (
+                "auth/middleware.rs",
+                "use crate::auth::session::Session; fn guard(s: Session) { session_expiry(&s); }",
+            ),
+            (
+                "ui/button.rs",
+                "fn draw_button(w: Widget) { w.paint_rect(); }",
+            ),
+            (
+                "ui/panel.rs",
+                "fn draw_panel(w: Widget) { w.paint_grid(); }",
+            ),
         ];
         let files: Vec<crate::types::FileInfo> = srcs
             .iter()
@@ -213,14 +271,34 @@ mod tests {
                 hash: String::new(),
             })
             .collect();
-        let parsed: Vec<_> = srcs.iter().map(|(_, s)| parse_file(Lang::Rust, s)).collect();
+        let parsed: Vec<_> = srcs
+            .iter()
+            .map(|(_, s)| parse_file(Lang::Rust, s))
+            .collect();
         let hist = History::default();
         let g = graph::build(&files, &parsed, &hist);
-        let emb = crate::embed::embed_all(&parsed, &files.iter().map(|f| f.path.clone()).collect::<Vec<_>>());
+        let emb = crate::embed::embed_all(
+            &parsed,
+            &files.iter().map(|f| f.path.clone()).collect::<Vec<_>>(),
+        );
         let imp = graph::page_rank(files.len(), &g.edges, None);
-        let rel = score("fix session expiry bug", &files, &parsed, &g.edges, &emb, &imp, &hist);
-        assert!(rel.bands[0] > rel.bands[2], "session.rs should outrank button.rs");
-        assert!(rel.scores[1] > rel.scores[3], "middleware (connected) should outrank panel");
+        let rel = score(
+            "fix session expiry bug",
+            &files,
+            &parsed,
+            &g.edges,
+            &emb,
+            &imp,
+            &hist,
+        );
+        assert!(
+            rel.bands[0] > rel.bands[2],
+            "session.rs should outrank button.rs"
+        );
+        assert!(
+            rel.scores[1] > rel.scores[3],
+            "middleware (connected) should outrank panel"
+        );
     }
 
     #[test]

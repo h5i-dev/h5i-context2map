@@ -63,7 +63,11 @@ pub fn build_sidecar(built: &Built, query: &str) -> Sidecar {
                 RegionRecord {
                     path: r.display_name().to_string(),
                     band: sums[ri].band,
-                    files: r.files.iter().map(|f| built.file_handles[f.idx()].clone()).collect(),
+                    files: r
+                        .files
+                        .iter()
+                        .map(|f| built.file_handles[f.idx()].clone())
+                        .collect(),
                 },
             )
         })
@@ -75,7 +79,13 @@ pub fn build_sidecar(built: &Built, query: &str) -> Sidecar {
         .zip(&built.ext_handles)
         .map(|((name, _), h)| (h.clone(), name.clone()))
         .collect();
-    Sidecar { version: 1, query: query.to_string(), files, regions, externals }
+    Sidecar {
+        version: 1,
+        query: query.to_string(),
+        files,
+        regions,
+        externals,
+    }
 }
 
 pub fn write(sidecar: &Sidecar, path: &Path) -> anyhow::Result<()> {

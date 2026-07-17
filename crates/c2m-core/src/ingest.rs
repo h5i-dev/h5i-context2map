@@ -20,7 +20,10 @@ pub struct IngestOptions {
 
 impl Default for IngestOptions {
     fn default() -> Self {
-        IngestOptions { max_file_bytes: 1_000_000, max_files: 100_000 }
+        IngestOptions {
+            max_file_bytes: 1_000_000,
+            max_files: 100_000,
+        }
     }
 }
 
@@ -43,7 +46,10 @@ pub fn ingest(root: &Path, opts: &IngestOptions) -> Result<Vec<IngestedFile>> {
             continue;
         }
         // .git is covered by hidden(); also skip our own cache dir.
-        if entry.path().components().any(|c| c.as_os_str() == ".c2m" || c.as_os_str() == ".h5i-ctx")
+        if entry
+            .path()
+            .components()
+            .any(|c| c.as_os_str() == ".c2m" || c.as_os_str() == ".h5i-ctx")
         {
             continue;
         }
@@ -83,7 +89,13 @@ fn read_one(root: &Path, path: &Path, opts: &IngestOptions) -> Result<Option<Ing
     let loc = content.lines().filter(|l| !l.trim().is_empty()).count() as u32;
     let hash = blake3::hash(content.as_bytes()).to_hex().to_string();
     Ok(Some(IngestedFile {
-        info: FileInfo { lang: Lang::from_path(&rel), path: rel, size, loc, hash },
+        info: FileInfo {
+            lang: Lang::from_path(&rel),
+            path: rel,
+            size,
+            loc,
+            hash,
+        },
         content,
     }))
 }

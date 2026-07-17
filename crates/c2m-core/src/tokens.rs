@@ -102,19 +102,129 @@ pub fn query_terms(query: &str) -> Vec<String> {
 
 /// Common language keywords and glue words — noise for both retrieval and graphs.
 pub const STOPWORDS: &[&str] = &[
-    "the", "and", "for", "not", "with", "this", "that", "from", "have", "will", "your", "are",
-    "was", "were", "been", "than", "then", "them", "they", "there", "which", "would", "could",
-    "should", "about", "into", "over", "some", "when", "where", "what", "while", "each",
+    "the",
+    "and",
+    "for",
+    "not",
+    "with",
+    "this",
+    "that",
+    "from",
+    "have",
+    "will",
+    "your",
+    "are",
+    "was",
+    "were",
+    "been",
+    "than",
+    "then",
+    "them",
+    "they",
+    "there",
+    "which",
+    "would",
+    "could",
+    "should",
+    "about",
+    "into",
+    "over",
+    "some",
+    "when",
+    "where",
+    "what",
+    "while",
+    "each",
     // language keywords (union across supported langs)
-    "let", "mut", "impl", "use", "mod", "crate", "self", "super", "dyn", "ref", "match", "loop",
-    "async", "await", "move", "type", "where", "unsafe", "extern", "static", "const", "enum",
-    "struct", "trait", "true", "false", "none", "some", "def", "class", "import", "return",
-    "pass", "elif", "else", "lambda", "yield", "global", "nonlocal", "assert", "raise", "except",
-    "try", "finally", "print", "function", "var", "new", "delete", "typeof", "instanceof",
-    "void", "null", "undefined", "export", "default", "extends", "implements", "interface",
-    "public", "private", "protected", "package", "throws", "throw", "catch", "final", "abstract",
-    "func", "chan", "defer", "fallthrough", "range", "select", "goto", "map", "string", "int",
-    "bool", "byte", "float", "double", "long", "short", "char", "usize", "isize", "vec", "str",
+    "let",
+    "mut",
+    "impl",
+    "use",
+    "mod",
+    "crate",
+    "self",
+    "super",
+    "dyn",
+    "ref",
+    "match",
+    "loop",
+    "async",
+    "await",
+    "move",
+    "type",
+    "where",
+    "unsafe",
+    "extern",
+    "static",
+    "const",
+    "enum",
+    "struct",
+    "trait",
+    "true",
+    "false",
+    "none",
+    "some",
+    "def",
+    "class",
+    "import",
+    "return",
+    "pass",
+    "elif",
+    "else",
+    "lambda",
+    "yield",
+    "global",
+    "nonlocal",
+    "assert",
+    "raise",
+    "except",
+    "try",
+    "finally",
+    "print",
+    "function",
+    "var",
+    "new",
+    "delete",
+    "typeof",
+    "instanceof",
+    "void",
+    "null",
+    "undefined",
+    "export",
+    "default",
+    "extends",
+    "implements",
+    "interface",
+    "public",
+    "private",
+    "protected",
+    "package",
+    "throws",
+    "throw",
+    "catch",
+    "final",
+    "abstract",
+    "func",
+    "chan",
+    "defer",
+    "fallthrough",
+    "range",
+    "select",
+    "goto",
+    "map",
+    "string",
+    "int",
+    "bool",
+    "byte",
+    "float",
+    "double",
+    "long",
+    "short",
+    "char",
+    "usize",
+    "isize",
+    "vec",
+    "str",
 ];
 
 #[cfg(test)]
@@ -123,9 +233,18 @@ mod tests {
 
     #[test]
     fn splits_camel_and_snake() {
-        assert_eq!(split_subtokens("getUserName"), vec!["get", "user", "name", "getusername"]);
-        assert_eq!(split_subtokens("HTTP_CLIENT"), vec!["http", "client", "httpclient"]);
-        assert_eq!(split_subtokens("HTTPServer"), vec!["http", "server", "httpserver"]);
+        assert_eq!(
+            split_subtokens("getUserName"),
+            vec!["get", "user", "name", "getusername"]
+        );
+        assert_eq!(
+            split_subtokens("HTTP_CLIENT"),
+            vec!["http", "client", "httpclient"]
+        );
+        assert_eq!(
+            split_subtokens("HTTPServer"),
+            vec!["http", "server", "httpserver"]
+        );
         assert_eq!(split_subtokens("session"), vec!["session"]);
     }
 
@@ -140,6 +259,9 @@ mod tests {
 
     #[test]
     fn query_terms_dedup() {
-        assert_eq!(query_terms("fix the session expiry, session bug"), vec!["fix", "session", "expiry", "bug"]);
+        assert_eq!(
+            query_terms("fix the session expiry, session bug"),
+            vec!["fix", "session", "expiry", "bug"]
+        );
     }
 }

@@ -70,10 +70,25 @@ pub fn assemble(
     let importance = graph::page_rank(files.len(), &graph.edges, None);
     let paths: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
     let embeddings = embed::embed_all(&parsed, &paths);
-    let relevance =
-        relevance::score(query, &files, &parsed, &graph.edges, &embeddings, &importance, &history);
+    let relevance = relevance::score(
+        query,
+        &files,
+        &parsed,
+        &graph.edges,
+        &embeddings,
+        &importance,
+        &history,
+    );
     let tree = regions::build(&files);
-    Analysis { files, parsed, graph, importance, relevance, tree, embeddings }
+    Analysis {
+        files,
+        parsed,
+        graph,
+        importance,
+        relevance,
+        tree,
+        embeddings,
+    }
 }
 
 /// Re-score relevance for a new query without re-analyzing (fast path for

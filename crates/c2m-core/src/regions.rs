@@ -37,17 +37,20 @@ pub struct RegionTree {
 
 /// Max countries on the L1 map. Beyond this, smallest regions merge into "…".
 const MAX_REGIONS: usize = 36;
-const MIN_REGIONS_BEFORE_SPLIT: usize = 5;
-/// A region is split into subdirectories while it dominates the repo.
+/// Stop splitting once the map is this busy (dominant or not).
+const SPLIT_CEILING: usize = 24;
+/// A region is split into subdirectories while it dominates the repo —
+/// however many siblings it has (`crates/` holding 70% of a workspace must
+/// split even when five top-level dirs exist).
 const DOMINANCE: f32 = 0.5;
 
 pub fn build(files: &[FileInfo]) -> RegionTree {
     // Start with top-level dirs (depth 1) + root files.
     let mut regions: Vec<(String, Vec<FileId>)> = group_by_prefix(files, "");
 
-    // Adaptive descent: while few regions and one dominates, split it.
+    // Adaptive descent: while one region dominates, split it.
     loop {
-        if regions.len() >= MIN_REGIONS_BEFORE_SPLIT {
+        if regions.len() >= SPLIT_CEILING {
             break;
         }
         let total: usize = regions.iter().map(|(_, f)| f.len()).sum();
@@ -100,12 +103,25 @@ pub fn build(files: &[FileInfo]) -> RegionTree {
                 .or_else(|| lang_loc.iter().max_by_key(|(_, &v)| v))
                 .map(|(&l, _)| l)
                 .unwrap_or(Lang::Other);
-            let depth = if path.is_empty() { 0 } else { path.matches('/').count() as u8 + 1 };
-            Region { path, files: members, loc, dominant_lang, depth }
+            let depth = if path.is_empty() {
+                0
+            } else {
+                path.matches('/').count() as u8 + 1
+            };
+            Region {
+                path,
+                files: members,
+                loc,
+                dominant_lang,
+                depth,
+            }
         })
         .collect();
 
-    RegionTree { regions: built, assignment }
+    RegionTree {
+        regions: built,
+        assignment,
+    }
 }
 
 /// Children of `prefix`: one region per immediate subdirectory, plus a
@@ -162,13 +178,29 @@ pub fn subdivide(files: &[FileInfo], region: &Region) -> RegionTree {
                 loc += files[id.idx()].loc as u64;
                 *lang_loc.entry(files[id.idx()].lang).or_insert(0) += files[id.idx()].loc as u64;
             }
-            let dominant_lang =
-                lang_loc.iter().max_by_key(|(_, &v)| v).map(|(&l, _)| l).unwrap_or(Lang::Other);
-            let depth = if path.is_empty() { 0 } else { path.matches('/').count() as u8 + 1 };
-            Region { path, files: members, loc, dominant_lang, depth }
+            let dominant_lang = lang_loc
+                .iter()
+                .max_by_key(|(_, &v)| v)
+                .map(|(&l, _)| l)
+                .unwrap_or(Lang::Other);
+            let depth = if path.is_empty() {
+                0
+            } else {
+                path.matches('/').count() as u8 + 1
+            };
+            Region {
+                path,
+                files: members,
+                loc,
+                dominant_lang,
+                depth,
+            }
         })
         .collect();
-    RegionTree { regions, assignment }
+    RegionTree {
+        regions,
+        assignment,
+    }
 }
 
 #[cfg(test)]
@@ -196,7 +228,10 @@ mod tests {
         ];
         let tree = build(&files);
         let names: Vec<&str> = tree.regions.iter().map(|r| r.path.as_str()).collect();
-        assert!(names.contains(&"src/auth"), "should split dominant src/: {names:?}");
+        assert!(
+            names.contains(&"src/auth"),
+            "should split dominant src/: {names:?}"
+        );
         assert!(names.contains(&"src/db"));
         // every file assigned
         assert!(tree.assignment.iter().all(|&a| a != usize::MAX));
@@ -204,9 +239,16 @@ mod tests {
 
     #[test]
     fn subdivide_gives_children() {
-        let files = vec![fi("src/auth/session.rs", 10), fi("src/auth/oauth/google.rs", 5)];
+        let files = vec![
+            fi("src/auth/session.rs", 10),
+            fi("src/auth/oauth/google.rs", 5),
+        ];
         let tree = build(&files);
-        let auth = tree.regions.iter().find(|r| r.path.contains("auth")).unwrap();
+        let auth = tree
+            .regions
+            .iter()
+            .find(|r| r.path.contains("auth"))
+            .unwrap();
         let sub = subdivide(&files, auth);
         assert!(!sub.regions.is_empty());
     }
