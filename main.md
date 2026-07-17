@@ -64,11 +64,13 @@ Design a Rust tool (context2map) that converts repo/context into query-condition
 - [x] edited crates/ctx2img-cli/src/main.rs; edited crates/ctx2img-cli/src/main.rs; edited README.md
 - [x] ctx2img paint accepts literal text positionally
 - [x] edited README.md; edited crates/ctx2img-cli/src/ops.rs; edited crates/ctx2img-cli/src/main.rs
+- [x] Reverted inline-text arg (too risky); README now shows stdin form
 
 ## Active Branches
 - main (primary)
 
 ## Notes
+- [2026-07-17 13:07 UTC] `fix-repo`: Reverted inline-text arg (too risky); README now shows stdin form
 - [2026-07-17 13:02 UTC] `fix-repo`: edited README.md; edited crates/ctx2img-cli/src/ops.rs; edited crates/ctx2img-cli/src/main.rs
 - [2026-07-17 13:01 UTC] `fix-repo`: ctx2img paint accepts literal text positionally
 - [2026-07-17 12:56 UTC] `fix-repo`: edited crates/ctx2img-cli/src/main.rs; edited crates/ctx2img-cli/src/main.rs; edited README.md
