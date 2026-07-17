@@ -18,11 +18,13 @@ Design a Rust tool (context2map) that converts repo/context into query-condition
 - [x] wrote docs/DESIGN.md
 - [x] edited docs/DESIGN.md; edited docs/DESIGN.md; edited docs/DESIGN.md
 - [x] edited docs/DESIGN.md; edited docs/DESIGN.md; edited docs/DESIGN.md
+- [x] Full context2map implementation shipped
 
 ## Active Branches
 - main (primary)
 
 ## Notes
+- [2026-07-17 01:15 UTC] `wip`: Full context2map implementation shipped
 - [2026-07-17 00:20 UTC] `wip`: edited docs/DESIGN.md; edited docs/DESIGN.md; edited docs/DESIGN.md
 - [2026-07-17 00:19 UTC] `wip`: edited docs/DESIGN.md; edited docs/DESIGN.md; edited docs/DESIGN.md
 - [2026-07-17 00:15 UTC] `wip`: wrote docs/DESIGN.md
