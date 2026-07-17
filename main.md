@@ -73,11 +73,13 @@ Design a Rust tool (context2map) that converts repo/context into query-condition
 - [x] edited README.md; wrote install.sh; edited README.md
 - [x] wrote install.sh; edited README.md; edited .github/workflows/release.yml
 - [x] wrote install.sh; edited README.md; edited .github/workflows/release.yml
+- [x] v0.1.0 released: 4 targets published, install.sh verified against live assets
 
 ## Active Branches
 - main (primary)
 
 ## Notes
+- [2026-07-17 13:48 UTC] `main`: v0.1.0 released: 4 targets published, install.sh verified against live assets
 - [2026-07-17 13:44 UTC] `readme-curl-install`: wrote install.sh; edited README.md; edited .github/workflows/release.yml
 - [2026-07-17 13:43 UTC] `readme-curl-install`: wrote install.sh; edited README.md; edited .github/workflows/release.yml
 - [2026-07-17 13:36 UTC] `readme-curl-install`: edited README.md; wrote install.sh; edited README.md
