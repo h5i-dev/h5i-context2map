@@ -1,4 +1,4 @@
-# ctx2img (`ctx2img`)
+# ctx2img
 
 **Render agent context as images. Same text, roughly 60-75% fewer tokens.**
 
