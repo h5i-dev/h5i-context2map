@@ -62,22 +62,6 @@ fn save_last_query(ws: &Workspace, query: &str) {
     let _ = std::fs::write(ws.dir.join("last-query.txt"), query);
 }
 
-// ---------------------------------------------------------------- build
-
-pub fn build(repo: Option<&Path>) -> Result<()> {
-    let ctx = open(repo)?;
-    let built = ctx.ws.build("", ctx.now, true)?;
-    print_stats(&built);
-    println!(
-        "indexed {} files, {} regions, {} edges → {}",
-        built.analysis.files.len(),
-        built.analysis.tree.regions.len(),
-        built.analysis.graph.edges.len(),
-        ctx.ws.dir.display()
-    );
-    Ok(())
-}
-
 // ---------------------------------------------------------------- map
 
 fn seed_for(name: &str) -> u64 {
@@ -192,51 +176,6 @@ fn find_handles(repo: Option<&Path>, pattern: &str) -> Result<()> {
 
 // ---------------------------------------------------------------- render / badge
 
-#[allow(clippy::too_many_arguments)]
-pub fn render(
-    repo: Option<&Path>,
-    query: &str,
-    theme_name: &str,
-    format: &str,
-    out: Option<&Path>,
-    width: u32,
-    height: u32,
-    title: Option<&str>,
-) -> Result<()> {
-    let ctx = open(repo)?;
-    let built = ctx.ws.build(query, ctx.now, true)?;
-    print_stats(&built);
-    let theme: &dyn Theme = match theme_name {
-        "vlm" | "stark" => &VlmTheme,
-        "warm" => &WarmTheme,
-        _ => &ParchmentTheme,
-    };
-    let name = repo_name(&ctx.ws);
-    let mut saved = SavedSites::load(&ctx.ws.layout_path());
-    let cfg = SceneConfig {
-        width,
-        height,
-        title: title
-            .map(str::to_string)
-            .unwrap_or_else(|| format!("The Realm of {name}")),
-        seed: seed_for(&name),
-        ..Default::default()
-    };
-    let s = scene::build_l1(&built, &mut saved, &cfg);
-    saved.save(&ctx.ws.layout_path())?;
-
-    let path = out
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from(format!("repo-map.{format}")));
-    match format {
-        "png" => std::fs::write(&path, render_png(&s, theme)?)?,
-        "svg" => std::fs::write(&path, render_svg(&s, theme))?,
-        other => bail!("unknown format {other} (png|svg)"),
-    }
-    println!("map written to {}", path.display());
-    Ok(())
-}
-
 /// Token budget that a box layout actually NEEDS for `chars` of content at
 /// `font_px` — canvases are sized to content, not to the allowance, so
 /// boxes carry no built-in slack (and unused budget becomes savings).
@@ -273,6 +212,16 @@ pub fn paint(
     theme: &str,
     layout: &str,
 ) -> Result<()> {
+    // the decorative human map is a theme, not a command
+    if theme == "parchment" {
+        let root = input
+            .map(Path::to_path_buf)
+            .unwrap_or(std::env::current_dir()?);
+        if !root.is_dir() {
+            bail!("--theme parchment paints the human map of a DIRECTORY (got a file/stdin)");
+        }
+        return paint_parchment(&root, query, out_dir);
+    }
     if let Some(p) = input {
         if p.is_dir() {
             return paint_repo(
@@ -494,6 +443,39 @@ fn paint_doc(
 /// carry the FULL SOURCE of each region, highest-relevance regions first,
 /// until the token budget is spent. Coverage is reported, never implied.
 #[allow(clippy::too_many_arguments)]
+/// The human-facing map: organic Voronoi geography, parchment styling,
+/// infinite-zoom SVG. Cosmetic output; carries no source text.
+fn paint_parchment(root: &Path, query: &str, out_dir: Option<&Path>) -> Result<()> {
+    let input = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let repo_root = discover_root(&input);
+    let ws = Workspace::open(&repo_root)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let built = ws.build(query, now, true)?;
+    print_stats(&built);
+    let name = repo_name(&ws);
+    let mut saved = SavedSites::load(&ws.layout_path());
+    let cfg = SceneConfig {
+        width: 1400,
+        height: 1000,
+        title: format!("The Realm of {name}"),
+        seed: seed_for(&name),
+        ..Default::default()
+    };
+    let s = scene::build_l1(&built, &mut saved, &cfg);
+    saved.save(&ws.layout_path())?;
+    let dir = out_dir
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("{name}-parchment.svg"));
+    std::fs::write(&path, render_svg(&s, &ParchmentTheme))?;
+    println!("map written to {}", path.display());
+    Ok(())
+}
+
 /// Walk up from `start` to the enclosing repo root (.git or .ctx2img marker).
 /// LOC in scope: whole repo, or just the focused subtree.
 fn order2_total(built: &Built, subtree: &Option<String>) -> u64 {
