@@ -75,3 +75,131 @@ pub fn sample_elevation(scene: &Scene, x: f32, y: f32) -> f32 {
 pub fn lang_suffix(lang: c2m_core::Lang) -> String {
     format!(" · {}", lang.tag())
 }
+
+/// Bounding box of a normalized polygon in canvas px: (x0, y0, x1, y1).
+pub fn poly_bbox_px(poly: &[(f32, f32)], w: f32, h: f32) -> (f32, f32, f32, f32) {
+    let mut bb = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for &(x, y) in poly {
+        bb.0 = bb.0.min(x * w);
+        bb.1 = bb.1.min(y * h);
+        bb.2 = bb.2.max(x * w);
+        bb.3 = bb.3.max(y * h);
+    }
+    bb
+}
+
+/// Widest horizontal interval of the polygon at height `y` (canvas px).
+fn row_interval(poly: &[(f32, f32)], w: f32, h: f32, y: f32) -> Option<(f32, f32)> {
+    let mut xs: Vec<f32> = Vec::new();
+    let n = poly.len();
+    for i in 0..n {
+        let (x1, y1) = (poly[i].0 * w, poly[i].1 * h);
+        let (x2, y2) = (poly[(i + 1) % n].0 * w, poly[(i + 1) % n].1 * h);
+        if (y1 <= y && y2 > y) || (y2 <= y && y1 > y) {
+            xs.push(x1 + (y - y1) / (y2 - y1) * (x2 - x1));
+        }
+    }
+    xs.sort_by(f32::total_cmp);
+    xs.chunks_exact(2)
+        .map(|c| (c[0], c[1]))
+        .max_by(|a, b| (a.1 - a.0).total_cmp(&(b.1 - b.0)))
+}
+
+/// The v0.2 text-flow engine: typeset `lines` inside a territory polygon.
+///
+/// Mono metrics, hard-wrap with `↪` continuation, comment lines dimmed,
+/// explicit spill marker when content doesn't fit. Emits plain `Op::Text`
+/// rows, so both backends (raster + SVG) render it with no new machinery.
+/// Returns (ops, source_lines_consumed).
+#[allow(clippy::too_many_arguments)]
+pub fn flow_text_ops(
+    poly: &[(f32, f32)],
+    canvas_w: f32,
+    canvas_h: f32,
+    lines: &[String],
+    size_px: f32,
+    start_y_px: f32,
+    ink: Rgba,
+    dim: Rgba,
+    spill_note: &str,
+) -> (Vec<crate::display::Op>, usize) {
+    use crate::display::{Op, TextAlign};
+    let font = FontKind::Mono;
+    let advance = text::measure("M", size_px, font).max(1.0);
+    let line_h = size_px * 1.28;
+    let pad = size_px * 0.7;
+    let (_, _, _, by1) = poly_bbox_px(poly, canvas_w, canvas_h);
+
+    let mut ops = Vec::new();
+    let mut consumed = 0usize;
+    // pending: remainder of a hard-wrapped source line
+    let mut pending: Option<(String, bool)> = None;
+    let mut y = start_y_px;
+
+    while y + line_h < by1 - pad && (consumed < lines.len() || pending.is_some()) {
+        y += line_h;
+        // the row must be inside the polygon over the text's full height
+        let top = row_interval(poly, canvas_w, canvas_h, y - size_px);
+        let bot = row_interval(poly, canvas_w, canvas_h, y);
+        let Some(((tx0, tx1), (bx0, bx1))) = top.zip(bot) else {
+            continue;
+        };
+        let (x0, x1) = (tx0.max(bx0) + pad, tx1.min(bx1) - pad);
+        let capacity = ((x1 - x0) / advance) as usize;
+        if capacity < 12 {
+            continue;
+        }
+
+        let (raw, was_wrapped) = match pending.take() {
+            Some(p) => p,
+            None => {
+                let l = lines[consumed].replace('\t', "    ");
+                consumed += 1;
+                (l, false)
+            }
+        };
+        let trimmed = raw.trim_start();
+        let is_comment = trimmed.starts_with("//")
+            || trimmed.starts_with('#')
+            || trimmed.starts_with('*')
+            || trimmed.starts_with("/*");
+
+        let budget = capacity.saturating_sub(if was_wrapped { 2 } else { 0 });
+        let mut shown: String = raw.chars().take(budget).collect();
+        let rest: String = raw.chars().skip(budget).collect();
+        if !rest.is_empty() {
+            pending = Some((rest, true));
+        }
+        if was_wrapped {
+            shown = format!("↪ {shown}");
+        }
+        if shown.trim().is_empty() {
+            continue;
+        }
+        ops.push(Op::Text {
+            pos: (x0 / canvas_w, y / canvas_h),
+            text: shown,
+            size_px,
+            color: if is_comment { dim } else { ink },
+            font,
+            align: TextAlign::Left,
+            halo: None,
+        });
+    }
+
+    if consumed < lines.len() || pending.is_some() {
+        ops.push(Op::Text {
+            pos: (
+                poly.iter().map(|p| p.0).sum::<f32>() / poly.len() as f32,
+                (by1 - pad) / canvas_h,
+            ),
+            text: format!("⋯ +{} lines · {spill_note}", lines.len() - consumed),
+            size_px: size_px.max(10.0),
+            color: dim,
+            font: FontKind::Sans,
+            align: TextAlign::Center,
+            halo: None,
+        });
+    }
+    (ops, consumed)
+}

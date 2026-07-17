@@ -109,6 +109,7 @@ mod tests {
             &mut registry,
             &mut SavedSites::default(),
             &cfg,
+            None,
         );
         assert!(s.cells.len() >= 2, "session.rs and jwt.rs cells");
         let has_symbol_city = s
@@ -119,5 +120,59 @@ mod tests {
         assert!(has_symbol_city, "symbols get S handles at L2");
         let png = render_png(&s, &VlmTheme).unwrap();
         assert!(png.len() > 2000);
+    }
+
+    /// Codex mode (v0.2): cells carry their actual source text.
+    #[test]
+    fn codex_tile_typesets_source_in_territory() {
+        let dir = demo_repo();
+        let ws = Workspace::open(dir.path()).unwrap();
+        let built = ws.build("session expiry", 1_700_000_000, false).unwrap();
+        let auth = built
+            .analysis
+            .tree
+            .regions
+            .iter()
+            .position(|r| r.path.contains("auth"))
+            .expect("auth region");
+        let mut registry = c2m_index::HandleRegistry::default();
+        let cfg = SceneConfig {
+            width: 900,
+            height: 900,
+            text_px: 10.0,
+            ..Default::default()
+        };
+        let root = dir.path().to_path_buf();
+        let loader = move |p: &str| std::fs::read_to_string(root.join(p)).ok();
+        let s = scene::build_l2(
+            &built,
+            auth,
+            &mut registry,
+            &mut SavedSites::default(),
+            &cfg,
+            Some(&loader),
+        );
+        assert!(s.cells.iter().any(|c| c.text.is_some()), "cells carry text");
+        assert!(
+            s.cells.iter().all(|c| c.cities.is_empty()),
+            "text replaces cities"
+        );
+        // the theme must emit the actual source as text ops
+        let dl = VlmTheme.overlay(&s);
+        let body: Vec<&str> = dl
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                crate::display::Op::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            body.iter().any(|t| t.contains("session_expiry")),
+            "source text typeset into the tile"
+        );
+        let png_a = render_png(&s, &VlmTheme).unwrap();
+        let png_b = render_png(&s, &VlmTheme).unwrap();
+        assert_eq!(png_a, png_b, "codex renders deterministically");
     }
 }

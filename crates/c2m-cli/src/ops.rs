@@ -200,13 +200,17 @@ fn seed_for(name: &str) -> u64 {
 pub fn zoom(
     repo: Option<&Path>,
     handle: &str,
-    budget: u32,
+    budget: Option<u32>,
     provider: Provider,
     out: Option<&Path>,
     query: Option<&str>,
     text_only: bool,
     json: bool,
+    codex: bool,
+    text_px: f32,
 ) -> Result<()> {
+    // codex tiles carry actual source text: they earn a larger default canvas
+    let budget = budget.unwrap_or(if codex { 3600 } else { 1200 });
     let ctx = open(repo)?;
     let query = query
         .map(str::to_string)
@@ -240,9 +244,19 @@ pub fn zoom(
                     height: h,
                     title: format!("{} · {}", repo_name(&ctx.ws), entry.key),
                     seed: seed_for(&entry.key),
+                    text_px,
                     ..Default::default()
                 };
-                let s = scene::build_l2(&built, ri, &mut registry, &mut saved, &cfg);
+                let root = ctx.ws.root.clone();
+                let loader = move |path: &str| std::fs::read_to_string(root.join(path)).ok();
+                let s = scene::build_l2(
+                    &built,
+                    ri,
+                    &mut registry,
+                    &mut saved,
+                    &cfg,
+                    if codex { Some(&loader) } else { None },
+                );
                 saved.save(&ctx.ws.dir.join(format!("layout-{handle}.json")))?;
                 let png = render_png(&s, &VlmTheme)?;
                 let path = out

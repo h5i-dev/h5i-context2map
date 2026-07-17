@@ -52,8 +52,9 @@ enum Cmd {
     /// Zoom into a region (R#: image tile + roster) or file (F#: symbol detail).
     Zoom {
         handle: String,
-        #[arg(long, default_value_t = 1200)]
-        budget: u32,
+        /// Image token budget (default 1200; 3600 in --codex mode).
+        #[arg(long)]
+        budget: Option<u32>,
         #[arg(long, value_enum, default_value = "claude")]
         provider: Provider,
         #[arg(long)]
@@ -66,6 +67,13 @@ enum Cmd {
         text: bool,
         #[arg(long)]
         json: bool,
+        /// Codex mode (v0.2): typeset each file's actual source inside its
+        /// territory — the tile carries the text itself.
+        #[arg(long)]
+        codex: bool,
+        /// Mono text size in px for --codex.
+        #[arg(long, default_value_t = 10.0)]
+        text_px: f32,
     },
     /// Print exact source for a handle (F#/S#) or path. Layer 3: always text.
     Read {
@@ -155,6 +163,8 @@ fn main() -> anyhow::Result<()> {
             query,
             text,
             json,
+            codex,
+            text_px,
         } => ops::zoom(
             repo,
             &handle,
@@ -164,6 +174,8 @@ fn main() -> anyhow::Result<()> {
             query.as_deref(),
             text,
             json,
+            codex,
+            text_px,
         ),
         Cmd::Read { target, lines } => ops::read(repo, &target, lines.as_deref()),
         Cmd::Locate { pattern } => ops::locate(repo, &pattern),

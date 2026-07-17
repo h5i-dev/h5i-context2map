@@ -31,6 +31,8 @@ pub struct CellVis {
     pub centroid: (f32, f32),
     pub anchor_radius: f32,
     pub cities: Vec<CityVis>,
+    /// Codex mode (v0.2): the cell's actual content, typeset in-territory.
+    pub text: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +66,8 @@ pub struct Scene {
     pub field_h: usize,
     /// Total LOC represented (for the scale bar).
     pub total_loc: u64,
+    /// Codex text size (px); themes use it when cells carry text.
+    pub text_px: f32,
 }
 
 pub struct SceneConfig {
@@ -73,6 +77,8 @@ pub struct SceneConfig {
     pub seed: u64,
     /// Max dependency curves drawn.
     pub max_edges: usize,
+    /// Codex mode: mono size for in-territory text (px at final raster).
+    pub text_px: f32,
 }
 
 impl Default for SceneConfig {
@@ -83,9 +89,13 @@ impl Default for SceneConfig {
             title: String::new(),
             seed: 0,
             max_edges: 22,
+            text_px: 10.0,
         }
     }
 }
+
+/// Codex-mode file loader: repo-relative path -> file contents.
+pub type ContentLoader<'a> = dyn Fn(&str) -> Option<String> + 'a;
 
 fn area_weight(loc: u64, n_files: usize) -> f32 {
     (loc as f32 + 30.0 * n_files as f32).max(20.0).powf(0.8)
@@ -177,6 +187,7 @@ pub fn build_l1(built: &Built, saved: &mut SavedSites, cfg: &SceneConfig) -> Sce
                 centroid: shape.centroid,
                 anchor_radius: shape.anchor_radius,
                 cities,
+                text: None,
             }
         })
         .collect();
@@ -228,16 +239,21 @@ pub fn build_l1(built: &Built, saved: &mut SavedSites, cfg: &SceneConfig) -> Sce
         field_w: l.field_w,
         field_h: l.field_h,
         total_loc,
+        text_px: cfg.text_px,
     }
 }
 
 /// L2: one region's interior — cells are files, cities are symbols.
+/// `content` (codex mode): loads a file's text by repo-relative path; when
+/// given, cells carry their source for in-territory typesetting and symbol
+/// cities are omitted (the text replaces them).
 pub fn build_l2(
     built: &Built,
     region_idx: usize,
     registry: &mut HandleRegistry,
     saved: &mut SavedSites,
     cfg: &SceneConfig,
+    content: Option<&ContentLoader<'_>>,
 ) -> Scene {
     let a = &built.analysis;
     let region = &a.tree.regions[region_idx];
@@ -275,33 +291,44 @@ pub fn build_l2(
         .map(|(ci, &fi)| {
             let shape = &l.cells[ci];
             let f = &a.files[fi];
-            // top symbols become labeled cities
+            let text: Option<Vec<String>> = content.and_then(|loader| {
+                loader(&f.path).map(|src| {
+                    src.lines()
+                        .take(1200)
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                })
+            });
+            // top symbols become labeled cities (codex mode: text replaces them)
             let mut syms: Vec<&c2m_core::Symbol> = a.parsed[fi].symbols.iter().collect();
             syms.sort_by_key(|s| std::cmp::Reverse(s.line_end.saturating_sub(s.line)));
-            let cities = syms
-                .iter()
-                .take(2)
-                .enumerate()
-                .map(|(rank, sym)| {
-                    let h = registry.assign_symbol(
-                        &f.path,
-                        &sym.name,
-                        sym.kind.tag(),
-                        (sym.line, sym.line_end),
-                    );
-                    let offsets = [(0.0f32, 0.28f32), (0.0, 0.62)];
-                    let (ox, oy) = offsets[rank];
-                    CityVis {
-                        pos: (
-                            shape.anchor.0 + ox,
-                            shape.anchor.1 + oy * shape.anchor_radius,
-                        ),
-                        r_px: 2.4,
-                        label: format!("{h} {}", sym.name),
-                        band: a.relevance.bands[fi],
-                    }
-                })
-                .collect();
+            let cities = if text.is_some() {
+                Vec::new()
+            } else {
+                syms.iter()
+                    .take(2)
+                    .enumerate()
+                    .map(|(rank, sym)| {
+                        let h = registry.assign_symbol(
+                            &f.path,
+                            &sym.name,
+                            sym.kind.tag(),
+                            (sym.line, sym.line_end),
+                        );
+                        let offsets = [(0.0f32, 0.28f32), (0.0, 0.62)];
+                        let (ox, oy) = offsets[rank];
+                        CityVis {
+                            pos: (
+                                shape.anchor.0 + ox,
+                                shape.anchor.1 + oy * shape.anchor_radius,
+                            ),
+                            r_px: 2.4,
+                            label: format!("{h} {}", sym.name),
+                            band: a.relevance.bands[fi],
+                        }
+                    })
+                    .collect()
+            };
             CellVis {
                 handle: built.file_handles[fi].clone(),
                 name: f.path.rsplit('/').next().unwrap_or(&f.path).to_string(),
@@ -314,6 +341,7 @@ pub fn build_l2(
                 centroid: shape.centroid,
                 anchor_radius: shape.anchor_radius,
                 cities,
+                text,
             }
         })
         .collect();
@@ -359,5 +387,6 @@ pub fn build_l2(
         field_w: l.field_w,
         field_h: l.field_h,
         total_loc,
+        text_px: cfg.text_px,
     }
 }

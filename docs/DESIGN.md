@@ -1,36 +1,46 @@
 # context2map — Design Document
 
-**Status:** Draft v0.1 · 2026-07-16
+**Status:** v0.2 (text-bearing atlases) · 2026-07-16
 **Repo:** `h5i-context2map` · **Working binary name:** `c2m`
 
-A Rust tool that compiles a repository (plus task context) into a **query-conditioned
-semantic map image** — a "Repository Atlas" — that a VLM can survey in ~1–2k visual
-tokens, together with a small machine-readable text legend and stable handles that let
-the model zoom back to exact source text. One artifact pipeline, two render targets:
-a *VLM theme* engineered for machine legibility, and a *human theme* (cartographic
-eye-candy) engineered for GitHub traction.
+A Rust tool that compiles a repository (plus task context: prompts, docs, any text)
+into a **query-conditioned semantic map image** — a "Repository Atlas" — where the
+territories carry **the actual text, typeset inside their cells**, and the cartography
+(position, area, elevation, roads) carries the semantics. A small machine-readable
+legend and stable handles let the model recover guaranteed-exact source text whenever
+pixels aren't good enough. One artifact pipeline, multiple render targets: a *VLM
+theme* engineered for machine legibility, a *codex mode* where the text is the
+terrain, and a *human theme* (cartographic eye-candy) engineered for GitHub traction.
 
 ---
 
 ## 1. Thesis
 
-> The map is a **lossy, reversible index** — never the memory medium.
+> **The map carries the text; the geography carries the meaning; zoom carries the
+> guarantee.**
 
-Everything in this design follows from that sentence:
+(v0.2 revision — v0.1 said "pixels carry structure, not text". The evidence base
+below supports a stronger position: pixels carry *structure and text*, with rendering
+**density** as the explicit fidelity knob, and the handle/zoom system as the exactness
+guarantee rather than the only text channel.)
 
-1. **Pixels carry structure, not text.** Topology, hierarchy, relevance, importance,
-   categories, and boundaries go in the image. Exact code, identifiers, hashes, paths,
-   numbers, and *especially instructions/policies* never do — they stay in text
-   (the legend, or a zoom-to-source call).
-2. **Every element in the image is addressable.** Regions, files, and symbols carry
-   short stable handles (`R3`, `F103`, `S1042`) that resolve — through a sidecar index
-   that never enters the model context — to exact byte ranges in the working tree.
-3. **The image is query-conditioned.** Geography (where things are) is stable across
-   queries and changes slowly with the code; *elevation* (what matters right now) is
-   recomputed per task.
-4. **Text-degradable.** The legend alone is a usable (aider-style) text repo map. If a
-   model can't read the image, the system degrades to a known-good baseline instead of
-   failing.
+1. **Pixels carry text at a chosen density.** Rendered text in images is
+   token-cheaper than the same text as tokens (§2), and modern VLMs decode it
+   reliably up to a model-dependent compression ratio. `c2m` typesets the actual
+   source into each territory, at a density solved from the token budget and the
+   target model's calibrated reading ability.
+2. **Pixels also carry structure.** Topology, hierarchy, relevance, importance,
+   hazards, and dependencies stay encoded as geography — the layout engine doubles
+   as a typographic engine (text flows inside organic cells).
+3. **Every element is addressable, and exactness is never *claimed* by pixels.**
+   Handles (`R3`, `F103`, `S1042`) resolve to exact byte ranges via the sidecar.
+   Anything the model must quote, edit, hash-compare, or execute is re-fetched as
+   text (`c2m read`) — the image is evidence, the text channel is authority. This is
+   the LensVLM loop, and it is what makes aggressive in-image compression safe.
+4. **Instructions and policies still never go in pixels.** The security posture of
+   v0.1 is unchanged: system-level instructions, security policy, and precedence
+   rules live in the text control prompt only.
+5. **Text-degradable.** The legend alone remains a usable aider-style text map.
 
 ## 2. Evidence base (why this exact shape)
 
@@ -65,10 +75,45 @@ Honest caveat: below roughly ~300 files a text map is usually cheaper and safer.
 budget (`--representation auto`). We win on medium-to-huge repos and on
 whole-repo-awareness tasks, and we say so in the README instead of overclaiming.
 
+### The density model (v0.2 core)
+
+Whether text-in-pixels is trustworthy is not a yes/no question — it is a **density**
+question. The literature pins the curve well enough to engineer against:
+
+| Regime | Compression vs text tokens | Evidence | Use |
+|---|---|---|---|
+| **Lossless-legible** (mono ≥ ~14 px) | ~1–1.5× | trivially readable by all current VLMs | prompts, docs, small tiles |
+| **Compressed-legible** (~9–13 px) | ~2–4× | 97–99% acc at ~2:1 zero-shot (Text-or-Pixels); 3–4× parity (Glyph); syntax-highlight helps ≤4× (CodeOCR) | **default map body** |
+| **Frontier-only** (~6–9 px) | ~4–8× | Gemini-3-Pro holds code QA/summarization at 8×; open models cliff | opt-in per calibrated model |
+| **Texture** (< ~6 px) | >8× | gist/shape only | L1 overview of huge repos, where the structural channel dominates and zoom recovers text |
+
+Worked example (Claude high-res tier, 2576×2576 = 4784 tokens): DejaVu Mono at 12 px
+(≈7.2 px advance, 14 px leading) fits ≈ 65k characters ≈ 16k text-tokens → **~3.4×
+effective compression** inside the safe regime; at 8 px ≈ 147k chars → ~7.7× for
+calibrated-frontier use. One image ≈ a whole module; a medium repo ≈ a handful of
+L2 tiles; a huge repo keeps a structural L1 with text-as-texture.
+
+Density is solved per render: `density = f(budget, provider patch grid, model preset
+from calibration §10)`. Content that doesn't fit at the chosen density spills in
+relevance order to a `⋯ c2m read F#` marker — coverage degrades explicitly, never
+silently.
+
+**Exactness discipline.** Transcription probes (§10) measure each model's per-density
+character accuracy; the shipped presets stay inside the ≥99% band. Independent of
+that, the contract stays: pixels are for *reading*, `c2m read` is for *quoting* —
+the escape hatch is what lets the default density be aggressive.
+
+**Beyond repos.** The same engine renders *any* text stream (prompt, log, paper,
+dataset docs) into a map-folio: `c2m paint` — text flowed into decorated territory
+pages at budgeted density. Repos are the flagship input, not the only one.
+
 ## 3. Goals / non-goals
 
 **Goals**
 
+- G0. *(v0.2)* **Text-bearing maps**: territories typeset their actual content at a
+  budget-solved density; the map is simultaneously the index *and* (within the
+  calibrated density regime) the content. `c2m paint` extends this to arbitrary text.
 - G1. Whole-repo situational awareness for a VLM in ≤ ~2.5k tokens (map + legend), with
   lossless zoom-to-source via handles.
 - G2. Query-conditioned relevance baked into the image (elevation), so the model's first
@@ -83,8 +128,10 @@ whole-repo-awareness tasks, and we say so in the README instead of overclaiming.
 
 **Non-goals**
 
-- N1. Rendering source *text* into images for compression (that's Glyph/DeepSeek-OCR
-  territory; requires trained decoders and breaks exactness).
+- N1. *(revised in v0.2 — was "never render text into images")* Training or requiring
+  a **custom decoder**: `c2m` renders text only at densities the *target stock model*
+  is calibrated to read; it does not chase DeepSeek-OCR-class 10–20× ratios that need
+  a trained decode path.
 - N2. Being a general graph-viz library, IDE plugin, or server (v1 is a stateless CLI
   plus a bundled agent skill; no MCP server — see §9).
 - N3. Semantic *execution* understanding (no dynamic analysis in v1; call edges are
@@ -406,7 +453,9 @@ engine:
 | Handle drift breaking cached prompts/transcripts | Med | persistent registry, tombstones, rename-following (§5.1) |
 | Prompt-injection via file contents leaking into the map | Med | labels are names+handles only, sanitized charset; file *content* never rasterized at L1/L2; hazard layer actively marks untrusted-input surfaces |
 | Scope creep into IDE/graph-viz platform | Med | non-goals (§3); CLI + skill only for v1 |
-| Reasoning collapse on image input (models answer tersely) | Low-Med | map is for *navigation*, reasoning happens over L3 text; control prompt keeps chain-of-thought in text |
+| Reasoning collapse on image input (models answer tersely) | Low-Med | map is for *navigation*, reasoning happens over L3 text; control prompt keeps chain-of-thought in text; codex-mode instructions say "transcribe the relevant region before reasoning" |
+| *(v0.2)* Character errors in in-image text at aggressive density | **High if unmanaged** | density presets held inside the ≥99% transcription band per model (§10); spill/`read` escape hatch; pixels never authoritative for quoting/editing |
+| *(v0.2)* Non-mono/unicode-heavy content renders poorly at small sizes | Med | mono font, unicode fallback boxes counted as spill; density floor raised for non-ASCII-dense files |
 
 ## 14. Milestones
 
@@ -420,6 +469,22 @@ engine:
 - **M4 — Calibration + benchmarks.** presets per model, public scorecard, README table.
 - **M5 — Growth features.** GitHub Action polish, `diff --map`, social cards, timelapse;
   optional `rmcp` MCP wrapper if non-shell hosts ask for it.
+
+**v0.2 milestones (text-bearing atlases):**
+
+- **M6 — Text-flow engine.** Typeset arbitrary text inside territory polygons
+  (scanline row intervals, mono metrics, wrap markers, comment dimming, spill
+  markers). Prototype target: `c2m zoom R# --codex`.
+- **M7 — Density solver + presets.** Budget × provider grid × model preset → px
+  size; explicit spill accounting in the tile roster.
+- **M8 — `c2m paint`.** Arbitrary text/stdin → map-folio image(s) at budgeted
+  density (the general prompt-compression entry point).
+- **M9 — Codex aesthetics.** Typographic-map styling: region-name watermarks,
+  elevation wash under text, illuminated capitals for summits — the text *is* the
+  terrain, and it must be beautiful enough to share.
+- **M10 — Density calibration.** Transcription/needle/QA probes over a density
+  ladder per model → shipped `presets/*.toml`; README scorecard gains a
+  max-safe-density column.
 
 Each milestone is independently demoable; M0→M2 are sequential, M1 can proceed in
 parallel with M2 after M0.

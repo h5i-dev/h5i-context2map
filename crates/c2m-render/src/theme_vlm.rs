@@ -4,7 +4,7 @@
 
 use crate::display::{DisplayList, FontKind, Op, Rgba, TextAlign};
 use crate::scene::Scene;
-use crate::theme::{label_box, LabelPlacer, Theme};
+use crate::theme::{flow_text_ops, label_box, poly_bbox_px, LabelPlacer, Theme};
 use c2m_core::graph::EdgeKind;
 use c2m_core::hazard;
 
@@ -28,6 +28,14 @@ pub fn band_color(band: u8) -> Rgba {
     }
 }
 
+/// Codex mode: band tint light enough that dark mono text stays readable —
+/// the elevation wash sits *under* the text.
+pub fn band_tint(band: u8) -> Rgba {
+    let c = band_color(band);
+    let mix = |v: u8| (v as f32 * 0.35 + 255.0 * 0.65) as u8;
+    Rgba::opaque(mix(c.0), mix(c.1), mix(c.2))
+}
+
 /// Minimum label height in raster px; below this, drop the label (the
 /// legend roster still carries it) rather than render unreadable text.
 const MIN_LABEL_PX: f32 = 12.0;
@@ -47,20 +55,27 @@ impl Theme for VlmTheme {
                 color: band_color(1),
             });
         }
-        // land fills, low bands first so summits paint over shared borders
+        let codex = scene.cells.iter().any(|c| c.text.is_some());
+        // land fills, low bands first so summits paint over shared borders;
+        // codex cells get the light tint so text stays dark-on-light
         let mut order: Vec<usize> = (0..scene.cells.len()).collect();
         order.sort_by_key(|&i| scene.cells[i].band);
         for &i in &order {
             let c = &scene.cells[i];
             if c.poly.len() >= 3 {
+                let color = if c.text.is_some() {
+                    band_tint(c.band)
+                } else {
+                    band_color(c.band)
+                };
                 dl.push(Op::Fill {
                     poly: c.poly.clone(),
-                    color: band_color(c.band),
+                    color,
                 });
             }
         }
-        // contours (between-band isolines)
-        for (_, lines) in &scene.contours {
+        // contours (between-band isolines) — noise under body text, skip in codex
+        for (_, lines) in if codex { &[][..] } else { &scene.contours[..] } {
             for line in lines {
                 dl.push(Op::Stroke {
                     path: line.clone(),
@@ -83,7 +98,7 @@ impl Theme for VlmTheme {
                 closed: true,
                 dash: None,
             });
-            if c.hazards != 0 {
+            if c.hazards != 0 && c.text.is_none() {
                 dl.push(Op::Hatch {
                     poly: c.poly.clone(),
                     color: Rgba(HAZARD.0, HAZARD.1, HAZARD.2, 70),
@@ -142,6 +157,42 @@ impl Theme for VlmTheme {
         for &i in &order {
             let c = &scene.cells[i];
             if c.poly.len() < 3 {
+                continue;
+            }
+            // codex cell: header pinned to the cell top, the text below it
+            if let Some(lines) = &c.text {
+                let hsize = (scene.text_px * 1.2).max(MIN_LABEL_PX);
+                let (bx0, by0, bx1, _) = poly_bbox_px(&c.poly, w, h);
+                let cxm = (bx0 + bx1) / 2.0;
+                let hy = by0 + hsize * 1.7;
+                let mut header = format!("{} {} ▲{}", c.handle, c.name, c.band);
+                let tags = hazard::tags(c.hazards);
+                if !tags.is_empty() {
+                    header.push_str(&format!(" ⚠{}", tags.join(",")));
+                }
+                dl.push(Op::Text {
+                    pos: (cxm / w, hy / h),
+                    text: header,
+                    size_px: hsize,
+                    color: INK,
+                    font: FontKind::SansBold,
+                    align: TextAlign::Center,
+                    halo: Some(HALO),
+                });
+                let (ops, _) = flow_text_ops(
+                    &c.poly,
+                    w,
+                    h,
+                    lines,
+                    scene.text_px,
+                    hy + hsize * 0.5,
+                    INK,
+                    Rgba::opaque(128, 128, 128),
+                    &format!("c2m read {}", c.handle),
+                );
+                for op in ops {
+                    dl.push(op);
+                }
                 continue;
             }
             let size = (h * 0.017).clamp(MIN_LABEL_PX + 3.0, 24.0);
