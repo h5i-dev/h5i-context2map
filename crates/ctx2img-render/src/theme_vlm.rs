@@ -98,6 +98,70 @@ pub const DARK: MachinePalette = MachinePalette {
 /// legend roster still carries it) rather than render unreadable text.
 const MIN_LABEL_PX: f32 = 12.0;
 
+/// Geometry of an inscribe cell, shared between the overlay renderer and
+/// the `doc_spilled_chars` fit probe so both always agree on what fits.
+struct InscribeGeom {
+    bx0: f32,
+    by0: f32,
+    bx1: f32,
+    by1: f32,
+    hsize: f32,
+    header_y: f32,
+    body_start_y: f32,
+    /// too small for an ellipsized header: render the bare handle only
+    handle_only: bool,
+}
+
+fn inscribe_geom(poly: &[(f32, f32)], w: f32, h: f32, text_px: f32) -> InscribeGeom {
+    let hsize = (text_px * 1.2).max(MIN_LABEL_PX);
+    let (bx0, by0, bx1, by1) = poly_bbox_px(poly, w, h);
+    let header_y = by0 + hsize * 1.5;
+    InscribeGeom {
+        bx0,
+        by0,
+        bx1,
+        by1,
+        hsize,
+        header_y,
+        body_start_y: header_y + hsize * 0.5,
+        handle_only: by1 - by0 < hsize * 2.2 || bx1 - bx0 < hsize * 4.2,
+    }
+}
+
+/// Fit probe for canvas sizing: how many characters of the scene's cell
+/// text do NOT fit their boxes at this canvas size? Runs the same flow
+/// engine and geometry as the overlay, so 0 means the rendered page will
+/// show every character. Handle-only cells count as fully spilled.
+pub fn doc_spilled_chars(scene: &Scene) -> usize {
+    let (w, h) = (scene.width as f32, scene.height as f32);
+    let mut spilled = 0usize;
+    for c in &scene.cells {
+        let Some(lines) = &c.text else { continue };
+        if c.poly.len() < 3 {
+            continue;
+        }
+        let g = inscribe_geom(&c.poly, w, h, scene.text_px);
+        if g.handle_only {
+            spilled += lines.iter().map(|l| l.chars().count()).sum::<usize>();
+            continue;
+        }
+        let (_, _, cell_spill) = flow_text_ops(
+            &c.poly,
+            w,
+            h,
+            lines,
+            scene.text_px,
+            g.body_start_y,
+            STARK.ink,
+            STARK.contour,
+            "",
+            scene.boxes,
+        );
+        spilled += cell_spill;
+    }
+    spilled
+}
+
 impl MachinePalette {
     fn band(&self, band: u8) -> Rgba {
         self.bands[(band.clamp(1, 5) - 1) as usize]
@@ -251,9 +315,41 @@ impl MachinePalette {
             // inscribe cell: header pinned to the cell top-left, the text
             // below it; ellipsized to the box so it never crosses neighbors
             if let Some(lines) = &c.text {
-                let hsize = (scene.text_px * 1.2).max(MIN_LABEL_PX);
-                let (bx0, by0, bx1, _) = poly_bbox_px(&c.poly, w, h);
-                let hy = by0 + hsize * 1.5;
+                let g = inscribe_geom(&c.poly, w, h, scene.text_px);
+                let InscribeGeom {
+                    bx0,
+                    by0,
+                    bx1,
+                    by1,
+                    hsize,
+                    ..
+                } = g;
+                // a cell too small for even an ellipsized header renders as
+                // its bare handle, shrunk to fit — never text over neighbors
+                // (the legend roster carries title and content pointer)
+                if g.handle_only {
+                    let mut size = hsize.min((by1 - by0) * 0.6);
+                    let (tw, _) = label_box(&c.handle, size, FontKind::SansBold);
+                    if tw > (bx1 - bx0) * 0.86 {
+                        size *= (bx1 - bx0) * 0.86 / tw;
+                    }
+                    if size >= 7.0 {
+                        dl.push(Op::Text {
+                            pos: (
+                                (bx0 + bx1) / 2.0 / w,
+                                (by0 + by1) / 2.0 / h + size * 0.35 / h,
+                            ),
+                            text: c.handle.clone(),
+                            size_px: size,
+                            color: self.ink,
+                            font: FontKind::SansBold,
+                            align: TextAlign::Center,
+                            halo: Some(self.halo),
+                        });
+                    }
+                    continue;
+                }
+                let hy = g.header_y;
                 let mut header = format!("{} {} ▲{}", c.handle, c.name, c.band);
                 let tags = hazard::tags(c.hazards);
                 if !tags.is_empty() {
@@ -280,13 +376,13 @@ impl MachinePalette {
                 } else {
                     "truncated — see source".to_string()
                 };
-                let (ops, _) = flow_text_ops(
+                let (ops, _, _) = flow_text_ops(
                     &c.poly,
                     w,
                     h,
                     lines,
                     scene.text_px,
-                    hy + hsize * 0.5,
+                    g.body_start_y,
                     self.ink,
                     Rgba::opaque(128, 128, 128),
                     &spill_note,

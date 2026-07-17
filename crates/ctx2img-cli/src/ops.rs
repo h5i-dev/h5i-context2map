@@ -190,7 +190,7 @@ fn content_tokens(chars: usize, n_boxes: usize, font_px: f32) -> u32 {
     let advance =
         ctx2img_render::text::measure("M", font_px, ctx2img_render::display::FontKind::Mono);
     let line_h = font_px * 1.22;
-    let header_px2 = (font_px * 1.2 * 2.4) * 420.0; // header strip per box
+    let header_px2 = (font_px * 1.2 * 3.4) * 420.0; // header strip + spill-marker row per box
     let px2 = chars as f32 * advance * line_h * 1.08 + n_boxes as f32 * header_px2;
     (px2 / 750.0) as u32
 }
@@ -445,8 +445,7 @@ fn paint_doc(
         // small (cheap, dense) image, not a big white one
         let page_budget =
             content_tokens(group_chars, group.len(), font).clamp(300.min(page_cap), page_cap);
-        let (w, h) = provider.solve(page_budget, 1.0);
-        let cfg = SceneConfig {
+        let make_cfg = |w: u32, h: u32| SceneConfig {
             width: w,
             height: h,
             title: source_name.to_string(),
@@ -455,7 +454,36 @@ fn paint_doc(
             boxes: layout != "organic",
             ..Default::default()
         };
-        let s = scene::build_doc(&doc_sections, &cfg);
+        let (mut w, mut h) = provider.solve(page_budget, 1.0);
+        let mut s = scene::build_doc(&doc_sections, &make_cfg(w, h));
+        // Shrink-to-fit: the char-area estimate above overshoots (wrap
+        // waste, per-box row quantization), and the treemap spreads any
+        // surplus into every box as trailing white space. Walk the canvas
+        // down while the real flow engine still shows exactly as much of
+        // the text as the full-size canvas does.
+        if layout != "organic" {
+            let base_spill = ctx2img_render::theme_vlm::doc_spilled_chars(&s);
+            let mut try_budget = page_budget;
+            loop {
+                try_budget = (try_budget as f32 * 0.92) as u32;
+                if try_budget < 300 {
+                    break;
+                }
+                let (tw, th) = provider.solve(try_budget, 1.0);
+                if (tw, th) == (w, h) {
+                    continue; // patch grid hasn't moved yet
+                }
+                let cand = scene::build_doc(&doc_sections, &make_cfg(tw, th));
+                let spill = ctx2img_render::theme_vlm::doc_spilled_chars(&cand);
+                if std::env::var("CTX2IMG_SHRINK_DEBUG").is_ok() {
+                    eprintln!("shrink p{pi}: {tw}x{th} budget {try_budget} spill {spill} (base {base_spill}, chars {group_chars})");
+                }
+                if spill > base_spill {
+                    break;
+                }
+                (w, h, s) = (tw, th, cand);
+            }
+        }
         let png = render_png(&s, theme)?;
         let path = if groups.len() == 1 {
             dir.join(format!("{source_name}-map.png"))
