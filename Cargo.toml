@@ -1,0 +1,51 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/c2m-core",
+    "crates/c2m-index",
+    "crates/c2m-layout",
+    "crates/c2m-render",
+    "crates/c2m-cli",
+    "crates/c2m-eval",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/koukyosyumei/h5i-context2map"
+
+[workspace.dependencies]
+c2m-core = { path = "crates/c2m-core" }
+c2m-index = { path = "crates/c2m-index" }
+c2m-layout = { path = "crates/c2m-layout" }
+c2m-render = { path = "crates/c2m-render" }
+c2m-eval = { path = "crates/c2m-eval" }
+
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+blake3 = "1"
+rayon = "1.10"
+ignore = "0.4"
+petgraph = { version = "0.8", features = ["rayon"] }
+clap = { version = "4", features = ["derive"] }
+tiny-skia = "0.12"
+fontdue = "0.9"
+tree-sitter = "0.26"
+streaming-iterator = "0.1"
+tree-sitter-rust = "0.24"
+tree-sitter-python = "0.25"
+tree-sitter-javascript = "0.25"
+tree-sitter-typescript = "0.23"
+tree-sitter-go = "0.25"
+tree-sitter-java = "0.23"
+tempfile = "3"
+
+# Heavy analysis in dev builds is unusable on real repos; optimize deps even in dev.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
