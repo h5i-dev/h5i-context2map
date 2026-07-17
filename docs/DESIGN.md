@@ -98,7 +98,11 @@ from calibration §10)`. *(v0.3)* Text-bearing maps default to **box layout** �
 a squarified treemap of rectangles, one per file/section, ↵-reflow-packed —
 because rectangles tile exactly (no corner waste, no inter-cell channels);
 the organic Voronoi geography remains the index/human layout and is one
-`--layout organic` away. A/B at equal budget (crates/c2m-core, 2,600 tok,
+`--layout organic` away. Text cells keep **pure-paper backgrounds** — the
+elevation band moved from the fill to the **border (color + weight,
+1.6px valley → 4.6px summit)** plus the header's printed ▲n: a background
+tint taxes every glyph's contrast to encode one per-box attribute, a
+border encodes it for a few hundred pixels at zero contrast cost. A/B at equal budget (crates/c2m-core, 2,600 tok,
 2026-07-16, in-session VLM read): boxes carried ~2–3× more source (several
 files complete vs +143/+242/+518-line spills), equal per-glyph legibility;
 organic additionally suffers edge-curves crossing body text. The index

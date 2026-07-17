@@ -75,12 +75,10 @@ impl MachinePalette {
         self.bands[(band.clamp(1, 5) - 1) as usize]
     }
 
-    /// Inscribe mode: band wash light enough for dark mono text on top.
-    fn tint(&self, band: u8) -> Rgba {
-        let c = self.band(band);
-        let b = self.tint_base;
-        let mix = |v: u8, base: u8| (v as f32 * 0.35 + base as f32 * 0.65) as u8;
-        Rgba::opaque(mix(c.0, b.0), mix(c.1, b.1), mix(c.2, b.2))
+    /// Border ramp for text cells: the band colors darkened enough that
+    /// even band 1 is visible against paper.
+    fn band_border(&self, band: u8) -> Rgba {
+        self.band(band).shade(0.68)
     }
 
     fn terrain(&self, scene: &Scene) -> DisplayList {
@@ -94,15 +92,16 @@ impl MachinePalette {
             });
         }
         let inscribe = scene.cells.iter().any(|c| c.text.is_some());
-        // land fills, low bands first so summits paint over shared borders;
-        // inscribe cells get the light tint so text stays dark-on-light
+        // land fills, low bands first so summits paint over shared borders.
+        // Text cells stay PURE PAPER — maximum glyph contrast; their band is
+        // carried by the border (color + weight) and the ▲n in the header.
         let mut order: Vec<usize> = (0..scene.cells.len()).collect();
         order.sort_by_key(|&i| scene.cells[i].band);
         for &i in &order {
             let c = &scene.cells[i];
             if c.poly.len() >= 3 {
                 let color = if c.text.is_some() {
-                    self.tint(c.band)
+                    self.tint_base
                 } else {
                     self.band(c.band)
                 };
@@ -128,18 +127,38 @@ impl MachinePalette {
                 });
             }
         }
-        // region borders + hazard hatch
-        for c in &scene.cells {
+        // region borders + hazard hatch. Text cells: the border IS the
+        // elevation channel — band-colored and band-weighted (1.6px valley
+        // → 4.6px summit), doubly redundant with the header's ▲n. Summit
+        // borders stroke last so they win shared edges.
+        for &i in &order {
+            let c = &scene.cells[i];
             if c.poly.len() < 3 {
                 continue;
             }
+            let (bcolor, bwidth) = if c.text.is_some() {
+                (self.band_border(c.band), 1.0 + c.band as f32 * 0.72)
+            } else {
+                (self.ink, 1.8)
+            };
             dl.push(Op::Stroke {
                 path: c.poly.clone(),
-                color: self.ink,
-                width_px: 1.8,
+                color: bcolor,
+                width_px: bwidth,
                 closed: true,
                 dash: None,
             });
+            if c.hazards != 0 && c.text.is_some() {
+                // hazard: thin dashed red inner line, distinct from the
+                // band border (header also carries ⚠tags)
+                dl.push(Op::Stroke {
+                    path: inset_poly(&c.poly, 3.0 / scene.width as f32),
+                    color: self.hazard,
+                    width_px: 1.2,
+                    closed: true,
+                    dash: Some((5.0, 3.0)),
+                });
+            }
             if c.hazards != 0 && c.text.is_none() {
                 dl.push(Op::Hatch {
                     poly: c.poly.clone(),
@@ -372,6 +391,22 @@ impl Theme for WarmTheme {
     fn overlay(&self, scene: &Scene) -> DisplayList {
         WARM.overlay(scene)
     }
+}
+
+/// Shrink a polygon toward its centroid by roughly `d` (normalized units).
+fn inset_poly(poly: &[(f32, f32)], d: f32) -> Vec<(f32, f32)> {
+    let n = poly.len().max(1) as f32;
+    let (cx, cy) = poly
+        .iter()
+        .fold((0.0, 0.0), |(ax, ay), &(x, y)| (ax + x / n, ay + y / n));
+    poly.iter()
+        .map(|&(x, y)| {
+            let (dx, dy) = (x - cx, y - cy);
+            let len = (dx * dx + dy * dy).sqrt().max(1e-6);
+            let f = (1.0 - d / len).max(0.0);
+            (cx + dx * f, cy + dy * f)
+        })
+        .collect()
 }
 
 /// Control point: midpoint pushed perpendicular for a gentle arc.
