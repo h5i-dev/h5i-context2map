@@ -249,8 +249,22 @@ pub fn paint(
         bail!("nothing to paint (empty input)");
     }
 
-    // structured text → document map (unless the caller forces flat pages)
-    if !no_reflow {
+    // structured text → document map — but ONLY for actual prose formats.
+    // Code files often contain `# `-lines inside string literals; treating
+    // them as headings would route source through the section map and cost
+    // coverage. Code takes the flat path, which paginates losslessly.
+    let prose = match input {
+        Some(p) => matches!(
+            p.extension().and_then(|e| e.to_str()).unwrap_or(""),
+            "md" | "markdown" | "rst" | "txt"
+        ),
+        // stdin: require unambiguous markdown shape
+        None => {
+            text.lines().take(3).any(|l| l.starts_with("# "))
+                && text.lines().filter(|l| l.starts_with('#')).count() >= 3
+        }
+    };
+    if !no_reflow && prose {
         if let Some(sections) = ctx2img_core::sections::split_markdown(&text) {
             return paint_doc(
                 &text,
@@ -374,62 +388,95 @@ fn paint_doc(
         );
         return Ok(());
     }
-    let effective = if force { requested } else { effective.max(500) };
-    let total_chars: usize = sections.iter().map(|s| s.text.len()).sum();
-    let effective = if layout != "organic" {
-        effective.min(fit_budget(
-            total_chars,
-            sections.len(),
-            font_px.max(8.0),
-            effective,
-        ))
-    } else {
-        effective
-    };
+    let page_cap = if force { requested } else { effective.max(500) };
+    let font = font_px.max(8.0);
     let bands = ctx2img_core::sections::band_sections(sections, query);
-    let doc_sections: Vec<scene::DocSection> = sections
-        .iter()
-        .zip(&bands)
-        .map(|(s, &band)| scene::DocSection {
-            title: s.title.clone(),
-            text: s.text.clone(),
-            band,
-        })
-        .collect();
-    let (w, h) = provider.solve(effective, 1.0);
-    let cfg = SceneConfig {
-        width: w,
-        height: h,
-        title: source_name.to_string(),
-        seed: seed_for(source_name),
-        text_px: font_px.max(8.0),
-        boxes: layout != "organic",
-        ..Default::default()
-    };
-    let s = scene::build_doc(&doc_sections, &cfg);
-    let png = render_png(&s, theme)?;
+
+    // Pagination: a document larger than one page's budget gets MORE PAGES,
+    // never silent truncation — coverage is always 100% at section level.
+    // Greedy grouping in document order; an oversized section gets its own
+    // page (spilling internally, with an explicit marker).
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    let mut cur: Vec<usize> = Vec::new();
+    let mut cur_tok = 0u32;
+    for (i, s) in sections.iter().enumerate() {
+        let t = fit_budget(s.text.len(), 1, font, u32::MAX);
+        if !cur.is_empty() && cur_tok + t > page_cap {
+            groups.push(std::mem::take(&mut cur));
+            cur_tok = 0;
+        }
+        cur.push(i);
+        cur_tok += t;
+    }
+    if !cur.is_empty() {
+        groups.push(cur);
+    }
+
     let dir = out_dir
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
     std::fs::create_dir_all(&dir)?;
-    let path = dir.join(format!("{source_name}-map.png"));
-    std::fs::write(&path, &png)?;
 
-    let image_tokens = provider.tokens(w, h);
+    let mut pages: Vec<(PathBuf, u32, u32)> = Vec::new();
+    let mut image_tokens = 0u32;
+    let mut page_of = vec![0usize; sections.len()];
+    for (pi, group) in groups.iter().enumerate() {
+        let doc_sections: Vec<scene::DocSection> = group
+            .iter()
+            .map(|&i| scene::DocSection {
+                title: sections[i].title.clone(),
+                text: sections[i].text.clone(),
+                band: bands[i],
+            })
+            .collect();
+        for &i in group {
+            page_of[i] = pi + 1;
+        }
+        let group_chars: usize = group.iter().map(|&i| sections[i].text.len()).sum();
+        let page_budget = page_cap.min(fit_budget(group_chars, group.len(), font, page_cap));
+        let (w, h) = provider.solve(page_budget, 1.0);
+        let cfg = SceneConfig {
+            width: w,
+            height: h,
+            title: source_name.to_string(),
+            seed: seed_for(source_name) ^ pi as u64,
+            text_px: font,
+            boxes: layout != "organic",
+            ..Default::default()
+        };
+        let s = scene::build_doc(&doc_sections, &cfg);
+        let png = render_png(&s, theme)?;
+        let path = if groups.len() == 1 {
+            dir.join(format!("{source_name}-map.png"))
+        } else {
+            dir.join(format!("{source_name}-map{}.png", pi + 1))
+        };
+        std::fs::write(&path, &png)?;
+        image_tokens += provider.tokens(w, h);
+        pages.push((path, w, h));
+    }
+
     let sheet =
         ctx2img_core::factsheet::render_sheet(&ctx2img_core::factsheet::extract(full_text, 40));
-    let toc: Vec<String> = doc_sections
+    let toc: Vec<String> = sections
         .iter()
         .enumerate()
-        .map(|(i, sec)| format!("§{} {} ▲{}", i + 1, sec.title, sec.band))
+        .map(|(i, sec)| {
+            if groups.len() == 1 {
+                format!("§{} {} ▲{}", i + 1, sec.title, bands[i])
+            } else {
+                format!("§{} {} ▲{} (p{})", i + 1, sec.title, bands[i], page_of[i])
+            }
+        })
         .collect();
     report_paint(
         json,
         &format!(
-            "ctx2img paint (this user's local tool) rendered this document as a section map — {} territories, each carrying its full text. Read every territory.",
-            doc_sections.len()
+            "ctx2img paint (this user's local tool) rendered this document as {} section-map page(s) — {} territories, each carrying its full text. Read every territory, pages in order.",
+            groups.len(),
+            sections.len()
         ),
-        &[(path, w, h)],
+        &pages,
         provider,
         image_tokens,
         text_tokens,
