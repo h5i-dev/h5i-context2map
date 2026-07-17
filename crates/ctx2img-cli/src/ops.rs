@@ -180,12 +180,19 @@ fn find_handles(repo: Option<&Path>, pattern: &str) -> Result<()> {
 /// `font_px` — canvases are sized to content, not to the allowance, so
 /// boxes carry no built-in slack (and unused budget becomes savings).
 fn fit_budget(chars: usize, n_boxes: usize, font_px: f32, budget: u32) -> u32 {
+    content_tokens(chars, n_boxes, font_px).clamp(500.min(budget), budget)
+}
+
+/// Unclamped token estimate for `chars` of box-laid content at `font_px`.
+/// Used for pagination arithmetic, where a floor would inflate small
+/// sections and split pages prematurely.
+fn content_tokens(chars: usize, n_boxes: usize, font_px: f32) -> u32 {
     let advance =
         ctx2img_render::text::measure("M", font_px, ctx2img_render::display::FontKind::Mono);
     let line_h = font_px * 1.22;
     let header_px2 = (font_px * 1.2 * 2.4) * 420.0; // header strip per box
     let px2 = chars as f32 * advance * line_h * 1.08 + n_boxes as f32 * header_px2;
-    ((px2 / 750.0) as u32).clamp(500, budget)
+    (px2 / 750.0) as u32
 }
 
 // ---------------------------------------------------------------- paint
@@ -400,8 +407,9 @@ fn paint_doc(
     let mut cur: Vec<usize> = Vec::new();
     let mut cur_tok = 0u32;
     for (i, s) in sections.iter().enumerate() {
-        let t = fit_budget(s.text.len(), 1, font, u32::MAX);
-        if !cur.is_empty() && cur_tok + t > page_cap {
+        let t = content_tokens(s.text.len(), 1, font);
+        // 8% tolerance: better one slightly-fuller page than a near-empty tail
+        if !cur.is_empty() && cur_tok + t > page_cap + page_cap / 12 {
             groups.push(std::mem::take(&mut cur));
             cur_tok = 0;
         }
@@ -433,7 +441,10 @@ fn paint_doc(
             page_of[i] = pi + 1;
         }
         let group_chars: usize = group.iter().map(|&i| sections[i].text.len()).sum();
-        let page_budget = page_cap.min(fit_budget(group_chars, group.len(), font, page_cap));
+        // canvas fits the group's real content — a small tail page becomes a
+        // small (cheap, dense) image, not a big white one
+        let page_budget =
+            content_tokens(group_chars, group.len(), font).clamp(300.min(page_cap), page_cap);
         let (w, h) = provider.solve(page_budget, 1.0);
         let cfg = SceneConfig {
             width: w,
