@@ -16,15 +16,12 @@ labeled box, thicker borders = more relevant to your query.*
 
 ## Install
 
-Prebuilt binaries (Linux x86_64, macOS x86_64/arm64; Windows zip on the
-[Releases page](https://github.com/h5i-dev/h5i-ctx2img/releases)):
-
 ```bash
-T="$(uname -m | sed 's/arm64/aarch64/')-$(uname -s | sed 's/Darwin/apple-darwin/;s/Linux/unknown-linux-gnu/')"
-curl -fsSL "https://github.com/h5i-dev/h5i-ctx2img/releases/download/v0.1.0/ctx2img-v0.1.0-$T.tar.gz" | tar xz
-sudo install "ctx2img-v0.1.0-$T/ctx2img" /usr/local/bin/   # or copy anywhere on PATH
+curl -fsSL https://raw.githubusercontent.com/h5i-dev/h5i-ctx2img/main/install.sh | sh
 ```
 
+Installs the latest release binary (Linux x86_64, macOS x86_64/arm64;
+Windows zip on the [Releases page](https://github.com/h5i-dev/h5i-ctx2img/releases)).
 Or from source: `cargo install --path crates/ctx2img-cli`
 
 ## Usage
